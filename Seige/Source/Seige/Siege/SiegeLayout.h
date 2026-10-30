@@ -1,0 +1,65 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "SiegeWall.h"
+
+class AActor;
+class ASiegeBombSite;
+class UWorld;
+
+/** Everything the game mode needs to know about a built map */
+struct FSiegeLayoutResult
+{
+	/** Every spawned actor, destroyed when the round resets */
+	TArray<TWeakObjectPtr<AActor>> Actors;
+
+	TArray<TWeakObjectPtr<ASiegeBombSite>> Sites;
+
+	TArray<FTransform> AttackerSpawns;
+	TArray<FTransform> DefenderSpawns;
+
+	/** Panels that border a bomb site; good reinforcement candidates */
+	TArray<TWeakObjectPtr<ASiegeWall>> SiteWalls;
+
+	/** Positions defender bots hold, indexed by site (0 = A, 1 = B) */
+	TArray<FVector> DefenderPostsA;
+	TArray<FVector> DefenderPostsB;
+
+	/** Points roaming defenders wander between */
+	TArray<FVector> RoamPoints;
+
+	/** Points outside the building attackers approach from before pushing a site */
+	TArray<FVector> EntryPoints;
+};
+
+/**
+ *  Builds the greybox "Embassy" map at runtime: a two-room-deep building with two bomb sites,
+ *  soft destructible walls, barricaded doors and windows, an upstairs office with a destructible floor
+ *  above site A, and an exterior ramp. Rebuilt every round so destruction resets.
+ */
+namespace SiegeLayout
+{
+	enum class EGapFill : uint8
+	{
+		Open,
+		Barricade
+	};
+
+	struct FGap
+	{
+		/** Distance along the wall run to the gap center */
+		float Center = 0.0f;
+		float Width = 120.0f;
+		/** Height of the gap bottom above the run's base (0 for doors) */
+		float Bottom = 0.0f;
+		/** Height of the gap top above the run's base */
+		float Top = 220.0f;
+		EGapFill Fill = EGapFill::Open;
+	};
+
+	SEIGE_API void BuildEmbassy(UWorld* World, FSiegeLayoutResult& Out);
+
+	SEIGE_API void Clear(FSiegeLayoutResult& Layout);
+}

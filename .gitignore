@@ -1,0 +1,24 @@
+# Unreal generated folders
+Seige/Binaries/
+Seige/Intermediate/
+Seige/Saved/
+Seige/DerivedDataCache/
+Seige/Plugins/**/Binaries/
+Seige/Plugins/**/Intermediate/
+
+# IDE and generated project files
+Seige/.vs/
+.vs/
+.vscode/
+.idea/
+*.sln
+*.slnx
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# OS
+Thumbs.db
+.DS_Store
