@@ -71,6 +71,9 @@ void ASiegePlayerController::EnsureSiegeInput()
 	MakeAction(TEXT("Select4"), { EKeys::Four });
 	MakeAction(TEXT("SpectateNext"), { EKeys::LeftMouseButton, EKeys::SpaceBar });
 	MakeAction(TEXT("Scoreboard"), { EKeys::Tab });
+
+	// spectating shares LMB and Space with Fire and Vault; let those keys reach the lower priority contexts too
+	SiegeActions[TEXT("SpectateNext")]->bConsumeInput = false;
 }
 
 UInputAction* ASiegePlayerController::GetSiegeAction(FName ActionName)
