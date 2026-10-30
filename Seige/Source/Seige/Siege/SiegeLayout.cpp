@@ -2,6 +2,7 @@
 
 #include "SiegeLayout.h"
 #include "SiegeObjective.h"
+#include "SiegeObservation.h"
 #include "SiegeTypes.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/StaticMesh.h"
@@ -159,6 +160,22 @@ namespace SiegeLayout
 					Panel(Center, Rotation, ESiegeWallKind::Floor, SizeY, SizeX, WallThickness, false, Label, false);
 				}
 			}
+		}
+
+		ASiegeSecurityCamera* SecurityCamera(const FString& Name, const FVector& Location, float Yaw)
+		{
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			// tilt slightly down like a ceiling-corner camera
+			ASiegeSecurityCamera* Cam = World->SpawnActor<ASiegeSecurityCamera>(ASiegeSecurityCamera::StaticClass(), Location, FRotator(-20.0f, Yaw, 0.0f), Params);
+			if (Cam)
+			{
+				Cam->InitCamera(Name, 1);
+				Out->Actors.Add(Cam);
+				Out->Cameras.Add(Cam);
+			}
+			return Cam;
 		}
 
 		ASiegeBombSite* Site(const FString& Name, const FVector& Center, const FVector& HalfExtent)
@@ -322,6 +339,14 @@ namespace SiegeLayout
 		Out.RoamPoints = { FVector(-1200.0f, 0.0f, 100.0f), FVector(1200.0f, 0.0f, 100.0f), FVector(-1000.0f, -600.0f, 100.0f), FVector(1000.0f, -600.0f, 100.0f), FVector(0.0f, -600.0f, 100.0f), FVector(-1000.0f, 575.0f, 420.0f) };
 
 		Out.EntryPoints = { FVector(0.0f, -1300.0f, 100.0f), FVector(-1900.0f, 0.0f, 100.0f), FVector(1900.0f, 0.0f, 100.0f), FVector(-1000.0f, -1300.0f, 100.0f), FVector(1000.0f, -1300.0f, 100.0f) };
+
+		// ----- defender security cameras -----
+		B.SecurityCamera(TEXT("Cam: West Hall"), FVector(-1470.0f, 0.0f, 270.0f), 0.0f);
+		B.SecurityCamera(TEXT("Cam: East Hall"), FVector(1470.0f, 0.0f, 270.0f), 180.0f);
+		B.SecurityCamera(TEXT("Cam: Lobby"), FVector(-470.0f, -970.0f, 270.0f), 45.0f);
+		B.SecurityCamera(TEXT("Cam: Lounge"), FVector(470.0f, 970.0f, 270.0f), -135.0f);
+		B.SecurityCamera(TEXT("Cam: Front Yard"), FVector(1000.0f, -1035.0f, 280.0f), -90.0f);
+		B.SecurityCamera(TEXT("Cam: Upstairs"), FVector(-530.0f, 970.0f, 590.0f), -135.0f);
 	}
 
 	void Clear(FSiegeLayoutResult& Layout)

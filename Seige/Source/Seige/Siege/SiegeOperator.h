@@ -49,6 +49,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Siege")
 	int32 ReinforcementsLeft = 0;
 
+	/** Recon drones this operator can still deploy (attackers only) */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Siege")
+	int32 DroneCount = 0;
+
+	TWeakObjectPtr<AController> OwningController;
+
 	UPROPERTY(EditAnywhere, Category="Siege|Movement", meta=(Units="cm"))
 	float LeanDistance = 32.0f;
 
@@ -187,6 +193,13 @@ public:
 	float GetLastShotTime() const { return LastShotTime; }
 	const FString& GetKillerName() const { return KillerName; }
 
+	int32 GetDroneCount() const { return DroneCount; }
+	void ConsumeDrone() { DroneCount = FMath::Max(0, DroneCount - 1); }
+
+	/** The player or bot controller this operator belongs to, even while it is looking through a drone */
+	AController* GetOwningController() const { return OwningController.Get(); }
+	void SetOwningController(AController* InController) { OwningController = InController; }
+
 	void ConsumeReinforcement() { ReinforcementsLeft = FMath::Max(0, ReinforcementsLeft - 1); }
 	void ConsumeUniqueGadget() { UniqueGadgetCount = FMath::Max(0, UniqueGadgetCount - 1); }
 
@@ -221,6 +234,7 @@ protected:
 	void OnLeanRightPressed() { bLeanRightHeld = true; RefreshLean(); }
 	void OnLeanRightReleased() { bLeanRightHeld = false; RefreshLean(); }
 	void RefreshLean();
+	void OnObservePressed();
 	void OnSprintPressed() { SetSprinting(true); }
 	void OnSprintReleased() { SetSprinting(false); }
 };

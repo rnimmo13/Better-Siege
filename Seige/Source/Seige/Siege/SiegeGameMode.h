@@ -52,9 +52,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category="Siege|Rules", meta=(Units="s"))
 	float PreparationTime = 45.0f;
 
-	/** Preparation length when the player attacks. Shorter until recon drones are added */
+	/** Preparation length when the player attacks (spent driving recon drones) */
 	UPROPERTY(EditDefaultsOnly, Category="Siege|Rules", meta=(Units="s"))
-	float AttackerPreparationTime = 20.0f;
+	float AttackerPreparationTime = 45.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category="Siege|Rules", meta=(Units="s"))
 	float ActionTime = 180.0f;
@@ -89,6 +89,10 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<ASiegeDevice> ActiveDevice;
+
+	/** AI controllers driving attacker bots' recon drones */
+	UPROPERTY()
+	TArray<TObjectPtr<class AAIController>> DroneControllers;
 
 	FTimerHandle PhaseTimer;
 	FTimerHandle BotPrepTimer;
@@ -135,6 +139,9 @@ public:
 	// ~End queries
 
 	// ~Begin events
+	/** Spawns a recon drone at the operator's feet. Returns null if it has none left */
+	class ASiegeDrone* DeployDrone(ASiegeOperator* Operator);
+
 	void RequestOperator(APlayerController* Player, int32 SideIndex);
 	void CompletePlant(ASiegeOperator* Planter);
 	void CompleteDisable(ASiegeOperator* Defuser);
@@ -179,6 +186,9 @@ protected:
 
 	/** Defender bots reinforce walls and deploy gadgets during preparation */
 	void RunBotPreparation();
+
+	/** Attacker bots send recon drones toward the target site */
+	void LaunchBotDrones();
 
 	/** All controllers taking part in the match (player first, then bots) */
 	TArray<AController*> GetParticipants() const;

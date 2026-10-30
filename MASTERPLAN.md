@@ -4,6 +4,14 @@ Reference design brief for Better Siege. Use this document as the north star for
 
 > Original request: *can you start working on a game similar to this description*
 
+## Build status
+
+| Milestone | Scope | Status |
+| --- | --- | --- |
+| 1. Core round loop | Operator select, preparation/action/post-plant phases, bomb sites with plant & disable, all win conditions, side swap and match end; hitscan guns with lethal headshots, falloff and wall penetration; 100/110/125 health; lean, crouch, sprint, vault; destructible walls, floors and barricades; reinforcement; soft & hard breach charges, shock box, shield, alarm sensor, pulse scan; AI bots for both teams; canvas HUD; greybox Embassy map | Done |
+| 2. Information | Attacker recon drones (2 each, auto-deployed in preparation), defender security cameras, manual and passive spotting, eliminated players watch drones/cameras, bots drone the target site and shoot enemy drones/cameras, 45s attacker preparation | Done |
+| Next | DBNO & revive, hatches and structural beams, bots that breach, rappelling, UMG HUD, sound propagation through openings, more maps and operators | Planned |
+
 ---
 
 Rainbow Six Siege is a tactical first-person shooter built around five attackers trying to overcome five defenders inside a destructible environment. You choose specialized characters called operators, gather information, reshape the building, and fight over an objective in short rounds where death usually lasts until the next round.

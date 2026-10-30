@@ -11,6 +11,8 @@
 #include "SiegeObjective.h"
 #include "SiegeGadgets.h"
 #include "SiegeWall.h"
+#include "SiegeObservation.h"
+#include "AIController.h"
 #include "ShooterWeapon.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -91,6 +93,7 @@ void ASiegeGameMode::HandleStartingNewPlayer_Implementation(APlayerController* N
 	if (ASiegePlayerState* PS = NewPlayer->GetPlayerState<ASiegePlayerState>())
 	{
 		PS->Team = 0;
+		PS->SetPlayerName(TEXT("You"));
 	}
 
 	if (!bMatchStarted)
@@ -260,7 +263,7 @@ void ASiegeGameMode::PostTeamMessage(uint8 Team, const FString& Text)
 
 void ASiegeGameMode::PostPlayerMessage(ASiegeOperator* Operator, const FString& Text)
 {
-	if (Operator && Cast<APlayerController>(Operator->GetController()))
+	if (Operator && Cast<APlayerController>(Operator->GetOwningController()))
 	{
 		if (ASiegeGameState* GS = GetSiegeGameState())
 		{
@@ -375,6 +378,15 @@ void ASiegeGameMode::StartNewRound()
 
 	SiegeLayout::BuildEmbassy(GetWorld(), Layout);
 	BotAttackSite = FMath::RandRange(0, FMath::Max(0, Layout.Sites.Num() - 1));
+
+	// cameras belong to whoever defends this round
+	for (const TWeakObjectPtr<ASiegeSecurityCamera>& Cam : Layout.Cameras)
+	{
+		if (Cam.IsValid())
+		{
+			Cam->SetTeam(1 - GS->AttackingTeam);
+		}
+	}
 
 	// overview camera while picking operators
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
@@ -498,6 +510,7 @@ void ASiegeGameMode::SpawnOperators()
 		Op->SetDisplayName(PS->GetPlayerName());
 
 		// possess before giving weapons: the weapon anim blueprints read the controller
+		Op->SetOwningController(C);
 		C->Possess(Op);
 		C->SetControlRotation(SpawnTransform.Rotator());
 
@@ -507,6 +520,7 @@ void ASiegeGameMode::SpawnOperators()
 
 		if (ASiegePlayerController* PC = Cast<ASiegePlayerController>(C))
 		{
+			PC->SetHomeOperator(Op);
 			PC->OnRoundStarted();
 		}
 	}
@@ -523,9 +537,21 @@ void ASiegeGameMode::BeginPreparation()
 	GetWorldTimerManager().SetTimer(PhaseTimer, this, &ASiegeGameMode::BeginAction, Duration, false);
 	GetWorldTimerManager().SetTimer(BotPrepTimer, this, &ASiegeGameMode::RunBotPreparation, 2.0f, true, 1.5f);
 
+	LaunchBotDrones();
+
+	// attacking players start the round driving a drone
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		ASiegePlayerController* PC = Cast<ASiegePlayerController>(It->Get());
+		if (PC && PC->GetOperator() && IsAttackingTeam(PC->GetOperator()->GetTeam()))
+		{
+			PC->EnterObservation();
+		}
+	}
+
 	if (IsAttackingTeam(0))
 	{
-		PostGlobalMessage(TEXT("Preparation: defenders are fortifying the building"));
+		PostGlobalMessage(TEXT("Preparation: scout with your drone. [LMB] spot  [Q/E] switch  [X] back to operator"));
 	}
 	else
 	{
@@ -536,6 +562,15 @@ void ASiegeGameMode::BeginPreparation()
 void ASiegeGameMode::BeginAction()
 {
 	GetWorldTimerManager().ClearTimer(BotPrepTimer);
+
+	// parked drones stay where they are and keep watching
+	for (AAIController* DroneAI : DroneControllers)
+	{
+		if (IsValid(DroneAI))
+		{
+			DroneAI->StopMovement();
+		}
+	}
 
 	SetPhase(ESiegePhase::Action, ActionTime);
 	GetWorldTimerManager().SetTimer(PhaseTimer, this, &ASiegeGameMode::OnActionTimeExpired, ActionTime, false);
@@ -631,7 +666,7 @@ void ASiegeGameMode::OnOperatorKilled(ASiegeOperator* Victim, AController* Kille
 	}
 
 	ASiegeGameState* GS = GetSiegeGameState();
-	AController* VictimController = Victim->GetController();
+	AController* VictimController = Victim->GetOwningController();
 
 	if (GS)
 	{
@@ -782,6 +817,25 @@ void ASiegeGameMode::CleanupRound()
 		ActiveDevice = nullptr;
 	}
 
+	for (AAIController* DroneAI : DroneControllers)
+	{
+		if (IsValid(DroneAI))
+		{
+			DroneAI->Destroy();
+		}
+	}
+	DroneControllers.Reset();
+
+	TArray<ASiegeDrone*> Drones;
+	for (TActorIterator<ASiegeDrone> It(GetWorld()); It; ++It)
+	{
+		Drones.Add(*It);
+	}
+	for (ASiegeDrone* Drone : Drones)
+	{
+		Drone->Destroy();
+	}
+
 	SiegeLayout::Clear(Layout);
 }
 
@@ -928,5 +982,72 @@ void ASiegeGameMode::RunBotPreparation()
 		default:
 			break;
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Drones
+
+ASiegeDrone* ASiegeGameMode::DeployDrone(ASiegeOperator* Operator)
+{
+	if (!Operator || Operator->IsDead() || Operator->GetDroneCount() <= 0)
+	{
+		return nullptr;
+	}
+
+	const FVector Forward = Operator->GetActorForwardVector();
+	const FVector Location = Operator->GetActorLocation() + Forward * 70.0f - FVector(0.0f, 0.0f, 80.0f);
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	ASiegeDrone* Drone = GetWorld()->SpawnActor<ASiegeDrone>(ASiegeDrone::StaticClass(), Location, FRotator(0.0f, Operator->GetActorRotation().Yaw, 0.0f), Params);
+	if (!Drone)
+	{
+		return nullptr;
+	}
+
+	const int32 Number = 3 - Operator->GetDroneCount();
+	Operator->ConsumeDrone();
+	Drone->InitDrone(Operator, Operator->GetTeam(), FString::Printf(TEXT("Drone %s-%d"), *Operator->GetDisplayName(), Number));
+
+	return Drone;
+}
+
+void ASiegeGameMode::LaunchBotDrones()
+{
+	if (!Layout.Sites.IsValidIndex(BotAttackSite) || !Layout.Sites[BotAttackSite].IsValid())
+	{
+		return;
+	}
+
+	ASiegeBombSite* Site = Layout.Sites[BotAttackSite].Get();
+	const uint8 Attackers = GetAttackingTeam();
+
+	for (ASiegeOperator* Op : RoundOperators)
+	{
+		if (!IsValid(Op) || Op->GetTeam() != Attackers || !Cast<ASiegeBotController>(Op->GetController()))
+		{
+			continue;
+		}
+
+		ASiegeDrone* Drone = DeployDrone(Op);
+		if (!Drone)
+		{
+			continue;
+		}
+
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+		AAIController* DroneAI = GetWorld()->SpawnActor<AAIController>(AAIController::StaticClass(), Params);
+		if (!DroneAI)
+		{
+			continue;
+		}
+
+		DroneAI->Possess(Drone);
+		DroneAI->MoveToLocation(Site->GetRandomPoint(), 120.0f, true, true, true, false, nullptr, true);
+		DroneControllers.Add(DroneAI);
 	}
 }

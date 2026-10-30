@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SiegeGameState.h"
+#include "Seige.h"
 #include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
 
@@ -11,6 +12,17 @@ float ASiegeGameState::GetPhaseTimeRemaining() const
 
 void ASiegeGameState::AddMessage(uint8 Team, const FString& Text, APawn* OnlyFor)
 {
+	// several gadgets can report the same thing at once; drop repeats
+	for (const FSiegeMessage& Existing : Messages)
+	{
+		if (Existing.Team == Team && Existing.Text == Text && GetServerWorldTimeSeconds() - Existing.Time < 2.0f)
+		{
+			return;
+		}
+	}
+
+	UE_LOG(LogSeige, Log, TEXT("Message [team %d]: %s"), Team, *Text);
+
 	FSiegeMessage Message;
 	Message.Team = Team;
 	Message.Text = Text;

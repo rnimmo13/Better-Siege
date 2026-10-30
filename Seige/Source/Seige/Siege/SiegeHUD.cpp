@@ -8,6 +8,7 @@
 #include "SiegeOperator.h"
 #include "SiegeObjective.h"
 #include "SiegeGun.h"
+#include "SiegeObservation.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
@@ -44,7 +45,8 @@ void ASiegeHUD::DrawHUD()
 		MyTeam = PS->Team;
 	}
 
-	ASiegeOperator* Op = PlayerOwner ? Cast<ASiegeOperator>(PlayerOwner->GetPawn()) : nullptr;
+	ASiegePlayerController* SiegePC = Cast<ASiegePlayerController>(PlayerOwner);
+	ASiegeOperator* Op = SiegePC ? SiegePC->GetOperator() : (PlayerOwner ? Cast<ASiegeOperator>(PlayerOwner->GetPawn()) : nullptr);
 
 	DrawTopBar(GS);
 	DrawRosters(GS);
@@ -54,6 +56,11 @@ void ASiegeHUD::DrawHUD()
 	if (GS->Phase == ESiegePhase::OperatorSelect)
 	{
 		DrawOperatorSelect(GS);
+	}
+	else if (SiegePC && SiegePC->IsObserving())
+	{
+		DrawWorldMarkers(GS);
+		DrawObservation(Op);
 	}
 	else if (Op)
 	{
@@ -279,7 +286,11 @@ void ASiegeHUD::DrawOperatorStatus(ASiegeOperator* Op)
 
 	if (!Def.bAttacker)
 	{
-		Text(FString::Printf(TEXT("Reinforcements: %d"), Op->GetReinforcementsLeft()), Right, Bottom - 22.0f * UIScale, Dim, SmallFont, 1.0f, 1.0f);
+		Text(FString::Printf(TEXT("Reinforcements: %d    [X] Cameras"), Op->GetReinforcementsLeft()), Right, Bottom - 22.0f * UIScale, Dim, SmallFont, 1.0f, 1.0f);
+	}
+	else
+	{
+		Text(FString::Printf(TEXT("[X] Drones: %d"), Op->GetDroneCount()), Right, Bottom - 22.0f * UIScale, Dim, SmallFont, 1.0f, 1.0f);
 	}
 
 	// damage flash
@@ -535,6 +546,54 @@ void ASiegeHUD::DrawRoundBanner(ASiegeGameState* GS)
 	Text(Reason, Canvas->ClipX * 0.5f, CY + 58.0f * UIScale, White, MediumFont, 1.0f, 0.5f);
 }
 
+void ASiegeHUD::DrawObservation(ASiegeOperator* Op)
+{
+	ISiegeObserverDevice* Device = PlayerOwner ? Cast<ISiegeObserverDevice>(PlayerOwner->GetPawn()) : nullptr;
+	if (!Device)
+	{
+		return;
+	}
+
+	const float CX = Canvas->ClipX * 0.5f;
+	const float CY = Canvas->ClipY * 0.5f;
+
+	// darkened frame edges to sell the camera feed
+	const float Edge = 40.0f * UIScale;
+	Box(0, 0, Canvas->ClipX, Edge, FLinearColor(0, 0, 0, 0.35f));
+	Box(0, Canvas->ClipY - Edge, Canvas->ClipX, Edge, FLinearColor(0, 0, 0, 0.35f));
+
+	// targeting brackets
+	const float S = 26.0f * UIScale;
+	const float L = 10.0f * UIScale;
+	const FLinearColor Color(1.0f, 1.0f, 1.0f, 0.8f);
+	DrawLine(CX - S, CY - S, CX - S + L, CY - S, Color, 2.0f);
+	DrawLine(CX - S, CY - S, CX - S, CY - S + L, Color, 2.0f);
+	DrawLine(CX + S, CY - S, CX + S - L, CY - S, Color, 2.0f);
+	DrawLine(CX + S, CY - S, CX + S, CY - S + L, Color, 2.0f);
+	DrawLine(CX - S, CY + S, CX - S + L, CY + S, Color, 2.0f);
+	DrawLine(CX - S, CY + S, CX - S, CY + S - L, Color, 2.0f);
+	DrawLine(CX + S, CY + S, CX + S - L, CY + S, Color, 2.0f);
+	DrawLine(CX + S, CY + S, CX + S, CY + S - L, Color, 2.0f);
+
+	const bool bDrone = Cast<ASiegeDrone>(PlayerOwner->GetPawn()) != nullptr;
+	const TArray<APawn*> Devices = SiegeObservation::GetTeamDevices(GetWorld(), Device->GetDeviceTeam());
+	const int32 Index = Devices.Find(PlayerOwner->GetPawn());
+
+	Text(FString::Printf(TEXT("%s   (%d / %d)"), *Device->GetDeviceName(), Index + 1, Devices.Num()), CX, Canvas->ClipY - 110.0f * UIScale, White, MediumFont, 1.1f, 0.5f);
+
+	FString Help = bDrone ? TEXT("[WASD] drive  [Space] hop  [LMB] spot  [Q/E] switch  [X] back") : TEXT("[Mouse] look  [LMB] spot  [Q/E] switch camera  [X] back");
+	if (Op && Op->IsDead())
+	{
+		Help += TEXT("   (you are eliminated)");
+	}
+	else if (Op && bDrone)
+	{
+		Help += FString::Printf(TEXT("   Drones left: %d"), Op->GetDroneCount());
+	}
+
+	Text(Help, CX, Canvas->ClipY - 80.0f * UIScale, Dim, SmallFont, 1.0f, 0.5f);
+}
+
 void ASiegeHUD::DrawDeathInfo(ASiegeOperator* Op)
 {
 	const float CX = Canvas->ClipX * 0.5f;
@@ -547,6 +606,8 @@ void ASiegeHUD::DrawDeathInfo(ASiegeOperator* Op)
 	{
 		Text(FString::Printf(TEXT("Spectating %s  -  [LMB] next teammate"), *PC->GetSpectateTarget()->GetDisplayName()), CX, Y + 30.0f * UIScale, White, SmallFont, 1.0f, 0.5f);
 	}
+
+	Text(TEXT("[X] watch drones / cameras and spot for your team"), CX, Y + 54.0f * UIScale, Dim, SmallFont, 1.0f, 0.5f);
 }
 
 void ASiegeHUD::DrawScoreboard(ASiegeGameState* GS)
@@ -599,6 +660,6 @@ void ASiegeHUD::DrawControlsHelp(ASiegeGameState* GS)
 		return;
 	}
 
-	const FString Help = TEXT("[WASD] move  [Shift] sprint  [Ctrl/C] crouch  [Q/E] lean  [Space] vault  [R] reload  [V] melee  [F] interact  [G] gadget  [B] secondary  [Tab] scores");
+	const FString Help = TEXT("[X] drones/cameras  [WASD] move  [Shift] sprint  [Ctrl/C] crouch  [Q/E] lean  [Space] vault  [R] reload  [V] melee  [F] interact  [G] gadget  [B] secondary  [Tab] scores");
 	Text(Help, Canvas->ClipX * 0.5f, Canvas->ClipY - 150.0f * UIScale, Dim, SmallFont, 1.0f, 0.5f);
 }

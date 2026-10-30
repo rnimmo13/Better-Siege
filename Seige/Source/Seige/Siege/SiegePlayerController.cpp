@@ -4,6 +4,8 @@
 #include "SiegeOperator.h"
 #include "SiegeGameMode.h"
 #include "SiegePlayerState.h"
+#include "SiegeObservation.h"
+#include "AIController.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -71,6 +73,7 @@ void ASiegePlayerController::EnsureSiegeInput()
 	MakeAction(TEXT("Select4"), { EKeys::Four });
 	MakeAction(TEXT("SpectateNext"), { EKeys::LeftMouseButton, EKeys::SpaceBar });
 	MakeAction(TEXT("Scoreboard"), { EKeys::Tab });
+	MakeAction(TEXT("Observe"), { EKeys::X });
 
 	// spectating shares LMB and Space with Fire and Vault; let those keys reach the lower priority contexts too
 	SiegeActions[TEXT("SpectateNext")]->bConsumeInput = false;
@@ -130,6 +133,7 @@ void ASiegePlayerController::OnRoundStarted()
 {
 	GetWorldTimerManager().ClearTimer(SpectateTimer);
 	SpectateTarget.Reset();
+	ReleaseBodyHolder();
 
 	if (GetPawn())
 	{
@@ -137,12 +141,167 @@ void ASiegePlayerController::OnRoundStarted()
 	}
 }
 
+ASiegeOperator* ASiegePlayerController::GetOperator() const
+{
+	if (HomeOperator.IsValid())
+	{
+		return HomeOperator.Get();
+	}
+
+	return Cast<ASiegeOperator>(GetPawn());
+}
+
+bool ASiegePlayerController::IsObserving() const
+{
+	return Cast<ISiegeObserverDevice>(GetPawn()) != nullptr;
+}
+
+void ASiegePlayerController::EnterObservation()
+{
+	ASiegeOperator* Op = GetOperator();
+	ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>();
+	if (!Op || !GM || IsObserving())
+	{
+		return;
+	}
+
+	const ESiegePhase Phase = GM->GetPhase();
+	if (Phase == ESiegePhase::OperatorSelect || Phase == ESiegePhase::WaitingToStart)
+	{
+		return;
+	}
+
+	const uint8 Team = Op->GetTeam();
+	const bool bAttacker = GM->IsAttackingTeam(Team);
+
+	APawn* Target = nullptr;
+
+	if (bAttacker)
+	{
+		// prefer one of our own drones that's still alive
+		for (APawn* Device : SiegeObservation::GetTeamDevices(GetWorld(), Team))
+		{
+			const ASiegeDrone* Drone = Cast<ASiegeDrone>(Device);
+			if (Drone && Drone->GetOwnerOperator() == Op)
+			{
+				Target = Device;
+				break;
+			}
+		}
+
+		// otherwise deploy a fresh one from the operator's feet
+		if (!Target && !Op->IsDead() && Op->GetDroneCount() > 0)
+		{
+			Target = GM->DeployDrone(Op);
+		}
+	}
+
+	// fall back to any team device: teammates' drones or the defenders' cameras
+	if (!Target)
+	{
+		const TArray<APawn*> Devices = SiegeObservation::GetTeamDevices(GetWorld(), Team);
+		if (Devices.Num() > 0)
+		{
+			Target = Devices[0];
+		}
+	}
+
+	if (!Target)
+	{
+		GM->PostPlayerMessage(Op, bAttacker ? TEXT("No drones available") : TEXT("No cameras available"));
+		return;
+	}
+
+	if (!Op->IsDead())
+	{
+		Op->DoStopFiring();
+		Op->StopInteract();
+	}
+
+	GetWorldTimerManager().ClearTimer(SpectateTimer);
+	Possess(Target);
+
+	// hand the body to a placeholder controller while we're away
+	if (!Op->GetController())
+	{
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+		if (!BodyHolder)
+		{
+			BodyHolder = GetWorld()->SpawnActor<AAIController>(AAIController::StaticClass(), Params);
+		}
+
+		if (BodyHolder)
+		{
+			const FRotator ViewRotation = Op->GetActorRotation();
+			BodyHolder->Possess(Op);
+			BodyHolder->SetControlRotation(ViewRotation);
+		}
+	}
+}
+
+void ASiegePlayerController::ReleaseBodyHolder()
+{
+	if (BodyHolder)
+	{
+		BodyHolder->UnPossess();
+		BodyHolder->Destroy();
+		BodyHolder = nullptr;
+	}
+}
+
+void ASiegePlayerController::ExitObservation()
+{
+	ASiegeOperator* Op = HomeOperator.Get();
+	if (!Op)
+	{
+		return;
+	}
+
+	ReleaseBodyHolder();
+	Possess(Op);
+	SetViewTarget(Op);
+
+	if (Op->IsDead())
+	{
+		SpectateNext();
+	}
+}
+
+void ASiegePlayerController::CycleObservation(int32 Direction)
+{
+	ISiegeObserverDevice* Current = Cast<ISiegeObserverDevice>(GetPawn());
+	if (!Current)
+	{
+		return;
+	}
+
+	const TArray<APawn*> Devices = SiegeObservation::GetTeamDevices(GetWorld(), Current->GetDeviceTeam());
+	if (Devices.Num() < 2)
+	{
+		return;
+	}
+
+	int32 Index = Devices.Find(GetPawn());
+	Index = (Index + Direction + Devices.Num()) % Devices.Num();
+	Possess(Devices[Index]);
+}
+
+void ASiegePlayerController::OnDeviceDestroyed(APawn* Device)
+{
+	if (GetPawn() == Device)
+	{
+		ExitObservation();
+	}
+}
+
 void ASiegePlayerController::SpectateNext()
 {
-	ASiegeOperator* MyOperator = Cast<ASiegeOperator>(GetPawn());
+	ASiegeOperator* MyOperator = GetOperator();
 
-	// only spectate while our own operator is dead
-	if (!MyOperator || !MyOperator->IsDead())
+	// only spectate while our own operator is dead and we're not watching a drone or camera
+	if (!MyOperator || !MyOperator->IsDead() || IsObserving())
 	{
 		return;
 	}

@@ -35,11 +35,20 @@ protected:
 
 	bool bShowScoreboard = false;
 
+	/** This round's operator. The controller may be possessing a drone or camera instead */
+	TWeakObjectPtr<ASiegeOperator> HomeOperator;
+
+	/** Keeps the operator's body possessed while the player looks through a device (its anim blueprints need a controller) */
+	UPROPERTY(Transient)
+	TObjectPtr<class AAIController> BodyHolder;
+
+	void ReleaseBodyHolder();
+
 public:
 
 	ASiegePlayerController();
 
-	/** Returns a tactical input action by name (LeanLeft, LeanRight, Crouch, Sprint, Interact, Gadget, Secondary, Reload, Melee) */
+	/** Returns a tactical input action by name (LeanLeft, LeanRight, Crouch, Sprint, Interact, Gadget, Secondary, Reload, Melee, Observe) */
 	UInputAction* GetSiegeAction(FName ActionName);
 
 	/** Called by the game mode when the possessed operator dies */
@@ -47,6 +56,26 @@ public:
 
 	/** Called by the game mode when a fresh operator is possessed for a new round */
 	void OnRoundStarted();
+
+	void SetHomeOperator(ASiegeOperator* Operator) { HomeOperator = Operator; }
+
+	/** This round's operator, even while looking through a drone or camera */
+	ASiegeOperator* GetOperator() const;
+
+	/** Switches to the team's drones (attackers, deploying one if needed) or cameras (defenders) */
+	void EnterObservation();
+
+	/** Returns to the operator, or to spectating if the operator is dead */
+	void ExitObservation();
+
+	/** Moves to the previous (-1) or next (+1) team device */
+	void CycleObservation(int32 Direction);
+
+	/** Called by a device that is destroyed while being looked through */
+	void OnDeviceDestroyed(APawn* Device);
+
+	/** True while looking through a drone or camera */
+	bool IsObserving() const;
 
 	ASiegeOperator* GetSpectateTarget() const { return SpectateTarget.Get(); }
 	bool IsScoreboardShown() const { return bShowScoreboard; }

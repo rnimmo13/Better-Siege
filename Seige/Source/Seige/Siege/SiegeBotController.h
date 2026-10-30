@@ -51,7 +51,8 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Bot", meta=(Units="s"))
 	float AimSettleTime = 1.6f;
 
-	TWeakObjectPtr<ASiegeOperator> Target;
+	/** Enemy operator, drone or camera being engaged */
+	TWeakObjectPtr<AActor> Target;
 	float TargetAcquiredTime = 0.0f;
 	float ReactionDelay = 0.5f;
 	bool bAimForHead = false;
@@ -108,9 +109,15 @@ protected:
 	void PlanRound(ASiegeGameMode* GM, ASiegeOperator* Op);
 
 	/** Returns the closest enemy currently in line of sight */
-	ASiegeOperator* FindVisibleEnemy(ASiegeOperator* Op) const;
+	AActor* FindVisibleEnemy(ASiegeOperator* Op) const;
 
-	bool HasLineOfSight(ASiegeOperator* Op, ASiegeOperator* Enemy) const;
+	/** Returns the closest enemy drone or camera in line of sight */
+	AActor* FindVisibleDevice(ASiegeOperator* Op) const;
+
+	/** Where to aim at a target */
+	FVector GetAimPoint(AActor* InTarget) const;
+
+	bool HasLineOfSight(ASiegeOperator* Op, AActor* Enemy, const FVector& Point) const;
 
 	void UpdateCombat(ASiegeOperator* Op, float Now);
 	void UpdateObjective(ASiegeGameMode* GM, ASiegeOperator* Op, float Now);

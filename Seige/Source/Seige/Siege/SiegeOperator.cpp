@@ -72,6 +72,16 @@ void ASiegeOperator::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	EIC->BindAction(PC->GetSiegeAction(TEXT("Secondary")), ETriggerEvent::Started, this, &ASiegeOperator::UseSecondaryGadget);
 	EIC->BindAction(PC->GetSiegeAction(TEXT("Reload")), ETriggerEvent::Started, this, &ASiegeOperator::ReloadWeapon);
 	EIC->BindAction(PC->GetSiegeAction(TEXT("Melee")), ETriggerEvent::Started, this, &ASiegeOperator::Melee);
+	EIC->BindAction(PC->GetSiegeAction(TEXT("Observe")), ETriggerEvent::Started, this, &ASiegeOperator::OnObservePressed);
+}
+
+void ASiegeOperator::OnObservePressed()
+{
+	// works while dead too: eliminated players keep watching drones and cameras
+	if (ASiegePlayerController* PC = Cast<ASiegePlayerController>(GetController()))
+	{
+		PC->EnterObservation();
+	}
 }
 
 void ASiegeOperator::ApplyOperatorDef(const FSiegeOperatorDef& Def, int32 Reinforcements)
@@ -85,6 +95,7 @@ void ASiegeOperator::ApplyOperatorDef(const FSiegeOperatorDef& Def, int32 Reinfo
 	UniqueGadgetCount = Def.UniqueGadgetCount;
 	SecondaryGadgetCount = Def.SecondaryGadgetCount;
 	ReinforcementsLeft = Reinforcements;
+	DroneCount = Def.bAttacker ? 2 : 0;
 
 	// the last weapon added becomes active, so add the sidearm first
 	if (Def.SecondaryWeapon)

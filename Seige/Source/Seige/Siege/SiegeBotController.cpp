@@ -7,6 +7,7 @@
 #include "SiegeObjective.h"
 #include "SiegeWall.h"
 #include "SiegeGun.h"
+#include "SiegeObservation.h"
 #include "NavigationSystem.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Engine/World.h"
@@ -156,7 +157,7 @@ void ASiegeBotController::Tick(float DeltaSeconds)
 	{
 		NextThinkTime = Now + 0.15f;
 
-		ASiegeOperator* Visible = GM->CanTeamAct(Op->GetTeam()) ? FindVisibleEnemy(Op) : nullptr;
+		AActor* Visible = GM->CanTeamAct(Op->GetTeam()) ? FindVisibleEnemy(Op) : nullptr;
 
 		if (Visible)
 		{
@@ -184,7 +185,7 @@ void ASiegeBotController::Tick(float DeltaSeconds)
 	HandleStuck(Op, Now);
 }
 
-ASiegeOperator* ASiegeBotController::FindVisibleEnemy(ASiegeOperator* Op) const
+AActor* ASiegeBotController::FindVisibleEnemy(ASiegeOperator* Op) const
 {
 	ASiegeGameMode* GM = GetSiegeGameMode();
 	if (!GM)
@@ -222,9 +223,34 @@ ASiegeOperator* ASiegeBotController::FindVisibleEnemy(ASiegeOperator* Op) const
 			continue;
 		}
 
-		if (HasLineOfSight(Op, Enemy))
+		if (HasLineOfSight(Op, Enemy, Enemy->GetHeadLocation()) || HasLineOfSight(Op, Enemy, Enemy->GetChestLocation()))
 		{
 			Best = Enemy;
+			BestDist = Dist;
+		}
+	}
+
+	// no operators in sight: shoot out enemy drones and cameras
+	return Best ? static_cast<AActor*>(Best) : FindVisibleDevice(Op);
+}
+
+AActor* ASiegeBotController::FindVisibleDevice(ASiegeOperator* Op) const
+{
+	const FVector Eye = Op->GetAimOrigin();
+	const FVector Forward = Op->GetControlRotation().Vector();
+	const float CosHalfAngle = FMath::Cos(FMath::DegreesToRadians(SightHalfAngle));
+
+	AActor* Best = nullptr;
+	float BestDist = 1500.0f;
+
+	for (APawn* Device : SiegeObservation::GetTeamDevices(GetWorld(), 1 - Op->GetTeam()))
+	{
+		const FVector ToDevice = Device->GetActorLocation() - Eye;
+		const float Dist = ToDevice.Size();
+
+		if (Dist < BestDist && FVector::DotProduct(ToDevice.GetSafeNormal(), Forward) >= CosHalfAngle && HasLineOfSight(Op, Device, Device->GetActorLocation()))
+		{
+			Best = Device;
 			BestDist = Dist;
 		}
 	}
@@ -232,36 +258,36 @@ ASiegeOperator* ASiegeBotController::FindVisibleEnemy(ASiegeOperator* Op) const
 	return Best;
 }
 
-bool ASiegeBotController::HasLineOfSight(ASiegeOperator* Op, ASiegeOperator* Enemy) const
+FVector ASiegeBotController::GetAimPoint(AActor* InTarget) const
+{
+	if (const ASiegeOperator* EnemyOp = Cast<ASiegeOperator>(InTarget))
+	{
+		return bAimForHead ? EnemyOp->GetHeadLocation() : EnemyOp->GetChestLocation();
+	}
+
+	return InTarget ? InTarget->GetActorLocation() : FVector::ZeroVector;
+}
+
+bool ASiegeBotController::HasLineOfSight(ASiegeOperator* Op, AActor* Enemy, const FVector& Point) const
 {
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(SiegeBotSight), true, Op);
 
-	const FVector Eye = Op->GetAimOrigin();
-
-	for (const FVector& Point : { Enemy->GetHeadLocation(), Enemy->GetChestLocation() })
+	FHitResult Hit;
+	if (GetWorld()->LineTraceSingleByChannel(Hit, Op->GetAimOrigin(), Point, ECC_Visibility, Params))
 	{
-		FHitResult Hit;
-		if (GetWorld()->LineTraceSingleByChannel(Hit, Eye, Point, ECC_Visibility, Params))
-		{
-			if (Hit.GetActor() == Enemy)
-			{
-				return true;
-			}
-		}
-		else
-		{
-			return true;
-		}
+		return Hit.GetActor() == Enemy;
 	}
 
-	return false;
+	return true;
 }
 
 void ASiegeBotController::UpdateCombat(ASiegeOperator* Op, float Now)
 {
-	ASiegeOperator* Enemy = Target.Get();
+	AActor* Enemy = Target.Get();
+	const ASiegeOperator* EnemyOperator = Cast<ASiegeOperator>(Enemy);
+	const ISiegeObserverDevice* EnemyDevice = Cast<ISiegeObserverDevice>(Enemy);
 
-	if (!Enemy || Enemy->IsDead())
+	if (!Enemy || (EnemyOperator && EnemyOperator->IsDead()) || (EnemyDevice && !EnemyDevice->IsDeviceAlive()))
 	{
 		StopFire(Op);
 
@@ -289,7 +315,9 @@ void ASiegeBotController::UpdateCombat(ASiegeOperator* Op, float Now)
 	// aim error shrinks as the bot settles onto the target
 	const float Settle = FMath::Clamp((Now - TargetAcquiredTime) / AimSettleTime, 0.0f, 1.0f);
 	const float ErrorRadius = FMath::Lerp(InitialAimError, SettledAimError, Settle);
-	const FVector AimPoint = (bAimForHead ? Enemy->GetHeadLocation() : Enemy->GetChestLocation()) + AimErrorDirection * ErrorRadius;
+	// devices are small, so aim error is scaled down for them
+	const float ErrorScale = EnemyOperator ? 1.0f : 0.25f;
+	const FVector AimPoint = GetAimPoint(Enemy) + AimErrorDirection * ErrorRadius * ErrorScale;
 
 	SetFocalPoint(AimPoint, EAIFocusPriority::Gameplay);
 

@@ -32,6 +32,9 @@ struct FSiegeLayoutResult
 
 	/** Points outside the building attackers approach from before pushing a site */
 	TArray<FVector> EntryPoints;
+
+	/** Defender security cameras placed around the map */
+	TArray<TWeakObjectPtr<class ASiegeSecurityCamera>> Cameras;
 };
 
 /**

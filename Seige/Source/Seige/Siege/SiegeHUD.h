@@ -45,6 +45,7 @@ protected:
 	void DrawOperatorSelect(ASiegeGameState* GS);
 	void DrawRoundBanner(ASiegeGameState* GS);
 	void DrawDeathInfo(ASiegeOperator* Op);
+	void DrawObservation(ASiegeOperator* Op);
 	void DrawScoreboard(ASiegeGameState* GS);
 	void DrawControlsHelp(ASiegeGameState* GS);
 

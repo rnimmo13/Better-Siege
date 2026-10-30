@@ -4,6 +4,7 @@
 #include "SiegeWall.h"
 #include "SiegeOperator.h"
 #include "SiegeGameMode.h"
+#include "SiegeObservation.h"
 #include "SiegeTypes.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
@@ -85,6 +86,24 @@ namespace SiegeExplosion
 			{
 				const float Damage = MaxDamage * FMath::Square(1.0f - Dist / DamageRadius);
 				Op->TakeDamage(Damage, FDamageEvent(), Instigator, Causer);
+			}
+		}
+
+		// drones and cameras caught in the blast
+		TArray<APawn*> Devices;
+		for (TActorIterator<APawn> It(World); It; ++It)
+		{
+			if (Cast<ISiegeObserverDevice>(*It) && FVector::Dist(It->GetActorLocation(), Location) < WallRadius + 100.0f)
+			{
+				Devices.Add(*It);
+			}
+		}
+
+		for (APawn* Device : Devices)
+		{
+			if (IsValid(Device))
+			{
+				Device->TakeDamage(1.0f, FDamageEvent(), Instigator, Causer);
 			}
 		}
 
@@ -246,7 +265,7 @@ void ASiegeBreachCharge::Detonate()
 
 	bExploded = true;
 
-	AController* InstigatorController = OwnerOperator.IsValid() ? OwnerOperator->GetController() : nullptr;
+	AController* InstigatorController = OwnerOperator.IsValid() ? OwnerOperator->GetOwningController() : nullptr;
 
 	// a little in front of the panel so the blast reaches both sides
 	const FVector BlastLocation = GetActorLocation();
