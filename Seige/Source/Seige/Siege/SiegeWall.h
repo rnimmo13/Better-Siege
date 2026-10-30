@@ -80,6 +80,9 @@ protected:
 	int32 NumCols = 0;
 	int32 NumRows = 0;
 
+	/** Cells removed at build time for drone holes; they don't count as damage */
+	int32 PreCutCells = 0;
+
 	/** Number of active shock boxes attached to this panel */
 	int32 ElectrifiedCount = 0;
 
@@ -101,6 +104,12 @@ public:
 
 	/** Destroys every cell on the panel */
 	void DestroyAllCells();
+
+	/**
+	 *  Cuts a small floor-level drone hole at the world location if it lies on this panel.
+	 *  Only drones fit through. Returns true if a hole was cut.
+	 */
+	bool CutDroneHoleAt(const FVector& WorldLocation, float HoleWidth = 50.0f, float HoleHeight = 50.0f);
 
 	/** Reinforces this panel. Returns false if it can't be reinforced */
 	bool Reinforce();

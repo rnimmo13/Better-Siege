@@ -11,6 +11,7 @@
 #include "NavigationSystem.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 
 ASiegeBotController::ASiegeBotController()
 {
@@ -563,21 +564,15 @@ void ASiegeBotController::HandleStuck(ASiegeOperator* Op, float Now)
 			}
 		}
 
-		FCollisionQueryParams Params(SCENE_QUERY_STAT(SiegeBotBash), false, Op);
+		// kick out whatever is left of a barricade just ahead, including pieces at head height
+		const FVector Ahead = Op->GetActorLocation() + Dir * 60.0f;
 
-		for (float Height : { 40.0f, 100.0f, 160.0f })
+		for (TActorIterator<ASiegeWall> It(GetWorld()); It; ++It)
 		{
-			const FVector Start = Op->GetActorLocation() + FVector(0, 0, Height - 90.0f);
-			FHitResult Hit;
-			if (GetWorld()->LineTraceSingleByChannel(Hit, Start, Start + Dir * 140.0f, ECC_Visibility, Params))
+			ASiegeWall* Wall = *It;
+			if (Wall->IsBarricade() && Wall->GetIntegrity() > 0.0f && FVector::Dist2D(Wall->GetActorLocation(), Ahead) < 160.0f)
 			{
-				if (ASiegeWall* Wall = Cast<ASiegeWall>(Hit.GetActor()))
-				{
-					if (Wall->IsBarricade())
-					{
-						Wall->ApplyExplosion(Hit.ImpactPoint, 70.0f, false);
-					}
-				}
+				Wall->DestroyAllCells();
 			}
 		}
 	}

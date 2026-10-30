@@ -133,7 +133,9 @@ namespace SiegeLayout
 
 				if (Gap.Fill == EGapFill::Barricade)
 				{
-					Piece(GapStart, GapEnd, Gap.Bottom, Gap.Top, false, ESiegeWallKind::Barricade);
+					// door barricades leave a gap at the bottom drones can slip under
+					const float BarricadeBottom = Gap.Bottom > 0.0f ? Gap.Bottom : 25.0f;
+					Piece(GapStart, GapEnd, BarricadeBottom, Gap.Top, false, ESiegeWallKind::Barricade);
 				}
 
 				Cursor = GapEnd;
@@ -160,6 +162,51 @@ namespace SiegeLayout
 					Panel(Center, Rotation, ESiegeWallKind::Floor, SizeY, SizeX, WallThickness, false, Label, false);
 				}
 			}
+		}
+
+		/** Cuts a drone hole in whichever destructible panel stands at this floor point */
+		void DroneHole(float X, float Y, float BaseZ)
+		{
+			const FVector Point(X, Y, BaseZ + 25.0f);
+
+			for (const TWeakObjectPtr<AActor>& Actor : Out->Actors)
+			{
+				if (ASiegeWall* Wall = Cast<ASiegeWall>(Actor.Get()))
+				{
+					if (Wall->CutDroneHoleAt(Point))
+					{
+						return;
+					}
+				}
+			}
+		}
+
+		/**
+		 *  Low concrete duct only a drone fits through, running straight between two floor points.
+		 *  Interior is 50cm wide and 45cm tall; both ends are open.
+		 */
+		void DroneTunnel(const FVector2D& From, const FVector2D& To, const FString& Label)
+		{
+			const FVector2D Delta = To - From;
+			const float Length = Delta.Size();
+			const bool bAlongX = FMath::Abs(Delta.X) > FMath::Abs(Delta.Y);
+			const FVector2D Mid = (From + To) * 0.5f;
+
+			const float InnerWidth = 50.0f;
+			const float InnerHeight = 45.0f;
+			const float Side = 15.0f;
+			const float Roof = 10.0f;
+
+			const FVector SideSize = bAlongX ? FVector(Length, Side, InnerHeight) : FVector(Side, Length, InnerHeight);
+			const FVector Offset = bAlongX ? FVector(0.0f, (InnerWidth + Side) * 0.5f, 0.0f) : FVector((InnerWidth + Side) * 0.5f, 0.0f, 0.0f);
+			const FVector Center(Mid.X, Mid.Y, InnerHeight * 0.5f);
+
+			Block(Center + Offset, SideSize, FRotator::ZeroRotator, GroundMaterial);
+			Block(Center - Offset, SideSize, FRotator::ZeroRotator, GroundMaterial);
+
+			const float OuterWidth = InnerWidth + Side * 2.0f;
+			const FVector RoofSize = bAlongX ? FVector(Length, OuterWidth, Roof) : FVector(OuterWidth, Length, Roof);
+			Block(FVector(Mid.X, Mid.Y, InnerHeight + Roof * 0.5f), RoofSize, FRotator::ZeroRotator, GroundMaterial);
 		}
 
 		ASiegeSecurityCamera* SecurityCamera(const FString& Name, const FVector& Location, float Yaw)
@@ -203,6 +250,18 @@ namespace SiegeLayout
 		Gap.Bottom = 0.0f;
 		Gap.Top = 220.0f;
 		Gap.Fill = Fill;
+		return Gap;
+	}
+
+	/** Drone-sized opening at the base of a solid wall */
+	static FGap DroneGap(float Center)
+	{
+		FGap Gap;
+		Gap.Center = Center;
+		Gap.Width = 50.0f;
+		Gap.Bottom = 0.0f;
+		Gap.Top = 45.0f;
+		Gap.Fill = EGapFill::Open;
 		return Gap;
 	}
 
@@ -262,7 +321,7 @@ namespace SiegeLayout
 		// east facade: storage, hallway door, solid concrete along site B
 		B.WallRun(FVector2D(1500, -1000), FVector2D(1500, -150), 0.0f, H, true, false, {}, TEXT("Storage"));
 		B.WallRun(FVector2D(1500, -150), FVector2D(1500, 150), 0.0f, H, true, false, { Door(150.0f, 140.0f, EGapFill::Barricade) }, TEXT("East Hall"));
-		B.WallRun(FVector2D(1500, 150), FVector2D(1500, 1000), 0.0f, H, false, false, {}, TEXT("B Server"));
+		B.WallRun(FVector2D(1500, 150), FVector2D(1500, 1000), 0.0f, H, false, false, { DroneGap(550.0f) }, TEXT("B Server"));
 
 		// ----- interior walls -----
 
@@ -339,6 +398,25 @@ namespace SiegeLayout
 		Out.RoamPoints = { FVector(-1200.0f, 0.0f, 100.0f), FVector(1200.0f, 0.0f, 100.0f), FVector(-1000.0f, -600.0f, 100.0f), FVector(1000.0f, -600.0f, 100.0f), FVector(0.0f, -600.0f, 100.0f), FVector(-1000.0f, 575.0f, 420.0f) };
 
 		Out.EntryPoints = { FVector(0.0f, -1300.0f, 100.0f), FVector(-1900.0f, 0.0f, 100.0f), FVector(1900.0f, 0.0f, 100.0f), FVector(-1000.0f, -1300.0f, 100.0f), FVector(1000.0f, -1300.0f, 100.0f) };
+
+		// ----- drone routes -----
+		// small floor-level holes only drones fit through
+		for (const FVector2D& Hole : {
+			FVector2D(-700.0f, -150.0f), FVector2D(700.0f, -150.0f),		// kitchen / storage <-> hallway
+			FVector2D(-700.0f, 150.0f), FVector2D(1300.0f, 150.0f),		// hallway <-> sites
+			FVector2D(-500.0f, 300.0f), FVector2D(500.0f, 850.0f),			// sites <-> lounge
+			FVector2D(-200.0f, -1000.0f), FVector2D(-1300.0f, -1000.0f),	// south facade
+			FVector2D(-1500.0f, 850.0f), FVector2D(1300.0f, 1000.0f) })	// site exteriors
+		{
+			B.DroneHole(Hole.X, Hole.Y, 0.0f);
+		}
+
+		// hidden drone-only tunnels into the building
+		B.DroneTunnel(FVector2D(2250.0f, 700.0f), FVector2D(1515.0f, 700.0f), TEXT("Storm Drain"));		// east yard -> site B through the concrete wall
+		B.DroneTunnel(FVector2D(320.0f, 1760.0f), FVector2D(320.0f, 1015.0f), TEXT("Lounge Vent"));		// behind the north cover -> lounge
+		B.DroneTunnel(FVector2D(-2050.0f, -700.0f), FVector2D(-1515.0f, -700.0f), TEXT("Kitchen Duct"));	// west yard -> kitchen
+		B.DroneHole(320.0f, 1000.0f, 0.0f);
+		B.DroneHole(-1500.0f, -700.0f, 0.0f);
 
 		// ----- defender security cameras -----
 		B.SecurityCamera(TEXT("Cam: West Hall"), FVector(-1470.0f, 0.0f, 270.0f), 0.0f);

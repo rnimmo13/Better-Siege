@@ -10,6 +10,7 @@ Reference design brief for Better Siege. Use this document as the north star for
 | --- | --- | --- |
 | 1. Core round loop | Operator select, preparation/action/post-plant phases, bomb sites with plant & disable, all win conditions, side swap and match end; hitscan guns with lethal headshots, falloff and wall penetration; 100/110/125 health; lean, crouch, sprint, vault; destructible walls, floors and barricades; reinforcement; soft & hard breach charges, shock box, shield, alarm sensor, pulse scan; AI bots for both teams; canvas HUD; greybox Embassy map | Done |
 | 2. Information | Attacker recon drones (2 each, auto-deployed in preparation), defender security cameras, manual and passive spotting, eliminated players watch drones/cameras, bots drone the target site and shoot enemy drones/cameras, 45s attacker preparation | Done |
+| 2.1 Aim & drone routes | Aim down sights on RMB (zoom, tighter spread, less recoil, slower movement and look); mouse wheel weapon swap; floor-level drone holes in walls, 25cm drone gap under door barricades, three hidden drone-only tunnels (Storm Drain into site B, Lounge Vent, Kitchen Duct); drone headlight | Done |
 | Next | DBNO & revive, hatches and structural beams, bots that breach, rappelling, UMG HUD, sound propagation through openings, more maps and operators | Planned |
 
 ---

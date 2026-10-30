@@ -39,6 +39,8 @@ void ASiegeOperator::BeginPlay()
 	Super::BeginPlay();
 
 	FirstPersonMeshBaseLocation = GetFirstPersonMesh()->GetRelativeLocation();
+	BaseFieldOfView = GetFirstPersonCameraComponent()->FieldOfView;
+	BaseFirstPersonFieldOfView = GetFirstPersonCameraComponent()->FirstPersonFieldOfView;
 
 	// bullets trace against the body mesh so we can detect headshots; the capsule lets them through
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
@@ -73,6 +75,9 @@ void ASiegeOperator::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	EIC->BindAction(PC->GetSiegeAction(TEXT("Reload")), ETriggerEvent::Started, this, &ASiegeOperator::ReloadWeapon);
 	EIC->BindAction(PC->GetSiegeAction(TEXT("Melee")), ETriggerEvent::Started, this, &ASiegeOperator::Melee);
 	EIC->BindAction(PC->GetSiegeAction(TEXT("Observe")), ETriggerEvent::Started, this, &ASiegeOperator::OnObservePressed);
+	EIC->BindAction(PC->GetSiegeAction(TEXT("Aim")), ETriggerEvent::Started, this, &ASiegeOperator::OnAimPressed);
+	EIC->BindAction(PC->GetSiegeAction(TEXT("Aim")), ETriggerEvent::Completed, this, &ASiegeOperator::OnAimReleased);
+	EIC->BindAction(PC->GetSiegeAction(TEXT("SwapWeapon")), ETriggerEvent::Started, this, &ASiegeOperator::OnSwapWeaponPressed);
 }
 
 void ASiegeOperator::OnObservePressed()
@@ -121,6 +126,7 @@ void ASiegeOperator::Tick(float DeltaSeconds)
 	}
 
 	UpdateLean(DeltaSeconds);
+	UpdateAim(DeltaSeconds);
 	UpdateMovementSpeed();
 	UpdateInteraction(DeltaSeconds);
 }
@@ -220,8 +226,42 @@ void ASiegeOperator::SetSprinting(bool bSprint)
 			UnCrouch();
 		}
 
+		bAimHeld = false;
 		DoStopFiring();
 	}
+}
+
+void ASiegeOperator::SetAiming(bool bAim)
+{
+	bAimHeld = bAim && !IsDead();
+
+	// aiming and sprinting are mutually exclusive; the most recent input wins
+	if (bAimHeld)
+	{
+		bSprintHeld = false;
+	}
+}
+
+void ASiegeOperator::UpdateAim(float DeltaSeconds)
+{
+	const float Target = (bAimHeld && !IsSprinting() && !IsInteracting()) ? 1.0f : 0.0f;
+	AimAlpha = FMath::FInterpTo(AimAlpha, Target, DeltaSeconds, 12.0f);
+
+	UCameraComponent* Camera = GetFirstPersonCameraComponent();
+	Camera->SetFieldOfView(FMath::Lerp(BaseFieldOfView, BaseFieldOfView * AimFOVMultiplier, AimAlpha));
+	Camera->FirstPersonFieldOfView = FMath::Lerp(BaseFirstPersonFieldOfView, BaseFirstPersonFieldOfView * 0.85f, AimAlpha);
+}
+
+void ASiegeOperator::DoAim(float Yaw, float Pitch)
+{
+	// slower look while zoomed in
+	const float Scale = FMath::Lerp(1.0f, AimLookSensitivity, AimAlpha);
+	Super::DoAim(Yaw * Scale, Pitch * Scale);
+}
+
+void ASiegeOperator::AddWeaponRecoil(float Recoil)
+{
+	Super::AddWeaponRecoil(Recoil * FMath::Lerp(1.0f, AimRecoilMultiplier, AimAlpha));
 }
 
 bool ASiegeOperator::IsSprinting() const
@@ -234,7 +274,8 @@ void ASiegeOperator::UpdateMovementSpeed()
 	const float Walk = OperatorDef.WalkSpeed;
 
 	UCharacterMovementComponent* Move = GetCharacterMovement();
-	Move->MaxWalkSpeed = (bSprintHeld && ForwardInput > 0.1f) ? Walk * SprintMultiplier : Walk;
+	const float AimedWalk = Walk * FMath::Lerp(1.0f, AimSpeedMultiplier, AimAlpha);
+	Move->MaxWalkSpeed = (bSprintHeld && ForwardInput > 0.1f) ? Walk * SprintMultiplier : AimedWalk;
 	Move->MaxWalkSpeedCrouched = Walk * 0.5f;
 }
 
@@ -310,6 +351,9 @@ float ASiegeOperator::GetSpreadMultiplier() const
 {
 	const float Speed = GetVelocity().Size2D();
 	float Multiplier = 1.0f + FMath::Clamp(Speed / 400.0f, 0.0f, 1.5f) * 2.0f;
+
+	// aiming down sights tightens the cone a lot
+	Multiplier *= FMath::Lerp(1.0f, AimSpreadMultiplier, AimAlpha);
 
 	if (bIsCrouched)
 	{

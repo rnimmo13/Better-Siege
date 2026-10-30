@@ -91,6 +91,27 @@ protected:
 	FVector FirstPersonMeshBaseLocation = FVector::ZeroVector;
 
 	bool bSprintHeld = false;
+
+	/** Aim down sights */
+	UPROPERTY(EditAnywhere, Category="Siege|Aim")
+	float AimFOVMultiplier = 0.72f;
+
+	UPROPERTY(EditAnywhere, Category="Siege|Aim")
+	float AimSpeedMultiplier = 0.55f;
+
+	UPROPERTY(EditAnywhere, Category="Siege|Aim")
+	float AimSpreadMultiplier = 0.25f;
+
+	UPROPERTY(EditAnywhere, Category="Siege|Aim")
+	float AimRecoilMultiplier = 0.6f;
+
+	UPROPERTY(EditAnywhere, Category="Siege|Aim")
+	float AimLookSensitivity = 0.6f;
+
+	bool bAimHeld = false;
+	float AimAlpha = 0.0f;
+	float BaseFieldOfView = 90.0f;
+	float BaseFirstPersonFieldOfView = 70.0f;
 	float ForwardInput = 0.0f;
 
 	bool bInteractHeld = false;
@@ -134,6 +155,9 @@ public:
 	void SetLean(float Direction);
 	void ToggleCrouch();
 	void SetSprinting(bool bSprint);
+	void SetAiming(bool bAim);
+	virtual void DoAim(float Yaw, float Pitch) override;
+	virtual void AddWeaponRecoil(float Recoil) override;
 	void StartInteract();
 	void StopInteract();
 	void UseUniqueGadget();
@@ -167,6 +191,9 @@ public:
 
 	/** Spread multiplier based on movement and stance */
 	float GetSpreadMultiplier() const;
+
+	/** 0 = hip, 1 = fully aimed down sights */
+	float GetAimAlpha() const { return AimAlpha; }
 
 	/** Location bots aim at for a headshot */
 	FVector GetHeadLocation() const;
@@ -235,6 +262,10 @@ protected:
 	void OnLeanRightReleased() { bLeanRightHeld = false; RefreshLean(); }
 	void RefreshLean();
 	void OnObservePressed();
+	void OnAimPressed() { SetAiming(true); }
+	void OnAimReleased() { SetAiming(false); }
+	void OnSwapWeaponPressed() { if (!IsInteracting()) { DoSwitchWeapon(); } }
+	void UpdateAim(float DeltaSeconds);
 	void OnSprintPressed() { SetSprinting(true); }
 	void OnSprintReleased() { SetSprinting(false); }
 };

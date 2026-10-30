@@ -311,11 +311,18 @@ void ASiegeHUD::DrawCrosshair(ASiegeOperator* Op)
 	const float T = FMath::Max(1.0f, 2.0f * UIScale);
 	const FLinearColor Color = Op->IsSprinting() ? FLinearColor(1, 1, 1, 0.25f) : FLinearColor(1, 1, 1, 0.9f);
 
-	Box(CX - T * 0.5f, CY - T * 0.5f, T, T, Color);
-	Box(CX - Gap - Len, CY - T * 0.5f, Len, T, Color);
-	Box(CX + Gap, CY - T * 0.5f, Len, T, Color);
-	Box(CX - T * 0.5f, CY - Gap - Len, T, Len, Color);
-	Box(CX - T * 0.5f, CY + Gap, T, Len, Color);
+	// aimed down sights: just a red dot; the cross lines fade out as you zoom in
+	const float Aim = Op->GetAimAlpha();
+	const float DotSize = FMath::Lerp(T, 4.0f * UIScale, Aim);
+	const FLinearColor DotColor = FLinearColor::LerpUsingHSV(Color, FLinearColor(1.0f, 0.15f, 0.1f, 1.0f), Aim);
+	Box(CX - DotSize * 0.5f, CY - DotSize * 0.5f, DotSize, DotSize, DotColor);
+
+	FLinearColor LineColor = Color;
+	LineColor.A *= 1.0f - Aim;
+	Box(CX - Gap - Len, CY - T * 0.5f, Len, T, LineColor);
+	Box(CX + Gap, CY - T * 0.5f, Len, T, LineColor);
+	Box(CX - T * 0.5f, CY - Gap - Len, T, Len, LineColor);
+	Box(CX - T * 0.5f, CY + Gap, T, Len, LineColor);
 
 	// hit marker
 	if (GetWorld()->GetTimeSeconds() - Op->GetLastHitConfirmTime() < 0.15f)
@@ -660,6 +667,6 @@ void ASiegeHUD::DrawControlsHelp(ASiegeGameState* GS)
 		return;
 	}
 
-	const FString Help = TEXT("[X] drones/cameras  [WASD] move  [Shift] sprint  [Ctrl/C] crouch  [Q/E] lean  [Space] vault  [R] reload  [V] melee  [F] interact  [G] gadget  [B] secondary  [Tab] scores");
+	const FString Help = TEXT("[RMB] aim  [Wheel] swap weapon  [X] drones/cameras  [WASD] move  [Shift] sprint  [Ctrl/C] crouch  [Q/E] lean  [Space] vault  [R] reload  [V] melee  [F] interact  [G] gadget  [B] secondary  [Tab] scores");
 	Text(Help, Canvas->ClipX * 0.5f, Canvas->ClipY - 150.0f * UIScale, Dim, SmallFont, 1.0f, 0.5f);
 }

@@ -46,8 +46,9 @@ void ASiegeWall::InitWall(ESiegeWallKind InKind, float InWidth, float InHeight, 
 	if (Kind == ESiegeWallKind::Barricade)
 	{
 		// barricades are flimsy and don't block navigation so bots will path through and bash them
+		// sturdy enough to survive stray shots at drones slipping underneath, still quick to melee or shoot open
 		CellSize = 40.0f;
-		CellHealth = 25.0f;
+		CellHealth = 60.0f;
 		Cells->SetCanEverAffectNavigation(false);
 	}
 
@@ -223,6 +224,42 @@ void ASiegeWall::DestroyAllCells()
 	RebuildInstances();
 }
 
+bool ASiegeWall::CutDroneHoleAt(const FVector& WorldLocation, float HoleWidth, float HoleHeight)
+{
+	if (Kind == ESiegeWallKind::Floor)
+	{
+		return false;
+	}
+
+	const FVector Local = GetActorTransform().InverseTransformPosition(WorldLocation);
+	const float Bottom = -Height * 0.5f;
+
+	// must be on this panel, near its base
+	if (FMath::Abs(Local.X) > Thickness * 2.0f || FMath::Abs(Local.Y) > Width * 0.5f || Local.Z < Bottom - 30.0f || Local.Z > Bottom + HoleHeight + 30.0f)
+	{
+		return false;
+	}
+
+	int32 Cut = 0;
+	for (int32 i = 0; i < CellHP.Num(); ++i)
+	{
+		const FVector Center = GetCellLocalCenter(i);
+		if (CellHP[i] > 0.0f && FMath::Abs(Center.Y - Local.Y) < HoleWidth * 0.5f && Center.Z < Bottom + HoleHeight)
+		{
+			CellHP[i] = 0.0f;
+			++Cut;
+		}
+	}
+
+	if (Cut > 0)
+	{
+		PreCutCells += Cut;
+		RebuildInstances();
+	}
+
+	return Cut > 0;
+}
+
 bool ASiegeWall::CanBeReinforced() const
 {
 	// can't reinforce a panel that already has holes in it
@@ -258,7 +295,7 @@ float ASiegeWall::GetIntegrity() const
 		}
 	}
 
-	return static_cast<float>(Alive) / CellHP.Num();
+	return static_cast<float>(Alive) / FMath::Max(1, CellHP.Num() - PreCutCells);
 }
 
 float ASiegeWall::GetPenetrationFactor() const

@@ -170,6 +170,15 @@ ASiegeDrone::ASiegeDrone()
 	Light->SetAttenuationRadius(60.0f);
 	Light->SetCastShadows(false);
 	Light->SetLightColor(FLinearColor(1.0f, 0.2f, 0.1f));
+
+	// dim headlight so tunnels and vents aren't pitch black
+	Headlight = CreateDefaultSubobject<UPointLightComponent>(TEXT("Headlight"));
+	Headlight->SetupAttachment(Camera);
+	Headlight->SetRelativeLocation(FVector(40.0f, 0.0f, 0.0f));
+	Headlight->SetIntensity(900.0f);
+	Headlight->SetAttenuationRadius(320.0f);
+	Headlight->SetCastShadows(false);
+	Headlight->SetLightColor(FLinearColor(0.85f, 0.9f, 1.0f));
 }
 
 void ASiegeDrone::InitDrone(ASiegeOperator* InOwner, uint8 InTeam, const FString& InName)

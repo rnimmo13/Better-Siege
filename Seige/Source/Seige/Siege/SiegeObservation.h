@@ -67,6 +67,9 @@ class SEIGE_API ASiegeDrone : public ACharacter, public ISiegeObserverDevice
 	UPROPERTY(VisibleAnywhere, Category="Components")
 	TObjectPtr<UPointLightComponent> Light;
 
+	UPROPERTY(VisibleAnywhere, Category="Components")
+	TObjectPtr<UPointLightComponent> Headlight;
+
 protected:
 
 	UPROPERTY(Transient)
