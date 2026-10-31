@@ -34,6 +34,17 @@ class SEIGE_API ASiegeOperator : public AShooterCharacter
 {
 	GENERATED_BODY()
 
+	/**
+	 *  Visible third-person body. Copies the pose of the (hidden) mannequin mesh, which keeps
+	 *  driving animation, hit detection and ragdolls.
+	 */
+	UPROPERTY(VisibleAnywhere, Category="Components")
+	TObjectPtr<USkeletalMeshComponent> BodyMesh;
+
+	/** Visible first-person body (head-less variant), copying the hidden first-person mannequin's pose */
+	UPROPERTY(VisibleAnywhere, Category="Components")
+	TObjectPtr<USkeletalMeshComponent> FirstPersonBodyMesh;
+
 protected:
 
 	/** Definition this operator was spawned with */

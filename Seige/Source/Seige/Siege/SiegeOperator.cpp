@@ -17,6 +17,8 @@
 #include "EnhancedInputComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Engine/SkeletalMesh.h"
+#include "UObject/ConstructorHelpers.h"
 
 ASiegeOperator::ASiegeOperator()
 {
@@ -32,6 +34,33 @@ ASiegeOperator::ASiegeOperator()
 
 	// the game mode assigns controllers explicitly
 	AutoPossessAI = EAutoPossessAI::Disabled;
+
+	// character art: the mannequin meshes stay as invisible animation/collision rigs and these follow their pose
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> OperatorMesh(TEXT("/Game/QuantumCharacter/Mesh/SKM_QuantumCharacter.SKM_QuantumCharacter"));
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> OperatorMeshNoHead(TEXT("/Game/QuantumCharacter/Mesh/SKM_QuantumCharacter_NoHead.SKM_QuantumCharacter_NoHead"));
+
+	BodyMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Body Mesh"));
+	BodyMesh->SetupAttachment(GetMesh());
+	BodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BodyMesh->SetOwnerNoSee(true);
+	BodyMesh->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::WorldSpaceRepresentation;
+	BodyMesh->bUseBoundsFromLeaderPoseComponent = true;
+	if (OperatorMesh.Succeeded())
+	{
+		BodyMesh->SetSkeletalMeshAsset(OperatorMesh.Object);
+	}
+
+	FirstPersonBodyMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("First Person Body Mesh"));
+	FirstPersonBodyMesh->SetupAttachment(GetFirstPersonMesh());
+	FirstPersonBodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FirstPersonBodyMesh->SetOnlyOwnerSee(true);
+	FirstPersonBodyMesh->FirstPersonPrimitiveType = EFirstPersonPrimitiveType::FirstPerson;
+	FirstPersonBodyMesh->CastShadow = false;
+	FirstPersonBodyMesh->bUseBoundsFromLeaderPoseComponent = true;
+	if (OperatorMeshNoHead.Succeeded())
+	{
+		FirstPersonBodyMesh->SetSkeletalMeshAsset(OperatorMeshNoHead.Object);
+	}
 }
 
 void ASiegeOperator::BeginPlay()
@@ -47,6 +76,20 @@ void ASiegeOperator::BeginPlay()
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	GetMesh()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
 	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+
+	// swap the visible art: the mannequins keep animating (and colliding) while hidden, the operator meshes copy their pose
+	if (BodyMesh && BodyMesh->GetSkeletalMeshAsset())
+	{
+		BodyMesh->SetLeaderPoseComponent(GetMesh());
+		GetMesh()->SetVisibility(false);
+	}
+
+	if (FirstPersonBodyMesh && FirstPersonBodyMesh->GetSkeletalMeshAsset())
+	{
+		GetFirstPersonMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+		FirstPersonBodyMesh->SetLeaderPoseComponent(GetFirstPersonMesh());
+		GetFirstPersonMesh()->SetVisibility(false);
+	}
 }
 
 void ASiegeOperator::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -582,6 +625,8 @@ void ASiegeOperator::Die()
 	GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));
 	GetMesh()->SetSimulatePhysics(true);
 	GetMesh()->SetOwnerNoSee(false);
+	BodyMesh->SetOwnerNoSee(false);
+	FirstPersonBodyMesh->SetHiddenInGame(true);
 	GetFirstPersonMesh()->SetHiddenInGame(true);
 
 	OnBulletCountUpdated.Broadcast(0, 0);
