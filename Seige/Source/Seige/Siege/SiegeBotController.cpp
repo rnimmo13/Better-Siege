@@ -754,8 +754,9 @@ bool ASiegeBotController::PickBreachWall(ASiegeGameMode* GM, ASiegeOperator* Op)
 		const FVector ToSite = (SiteCenter - Wall->GetActorLocation()).GetSafeNormal2D();
 		const FVector Outward = FVector::DotProduct(Normal, ToSite) > 0.0f ? -Normal : Normal;
 
+		// stand on the site's floor (it may be a level below or above the breacher)
 		FVector Stand = Wall->GetActorLocation() + Outward * 110.0f;
-		Stand.Z = Op->GetActorLocation().Z;
+		Stand.Z = SiteCenter.Z - 50.0f;
 
 		if (Site->IsInside(Stand))
 		{
@@ -841,7 +842,7 @@ bool ASiegeBotController::UpdateBreach(ASiegeGameMode* GM, ASiegeOperator* Op, f
 	LastBreachTick = Now;
 
 	// give up if a step takes too long (blocked path...)
-	if (Now - BreachStepTime > (BreachStep == EBreachStep::MoveToWall ? 25.0f : 10.0f) && BreachStep != EBreachStep::Done)
+	if (Now - BreachStepTime > (BreachStep == EBreachStep::MoveToWall ? 40.0f : 10.0f) && BreachStep != EBreachStep::Done)
 	{
 		UE_LOG(LogSeige, Log, TEXT("Breacher %s gave up at step %d"), *Op->GetDisplayName(), static_cast<int32>(BreachStep));
 		BreachStep = EBreachStep::Done;
@@ -862,7 +863,7 @@ bool ASiegeBotController::UpdateBreach(ASiegeGameMode* GM, ASiegeOperator* Op, f
 			return false;
 		}
 
-		if (FVector::Dist2D(Op->GetActorLocation(), BreachStand) > 70.0f)
+		if (FVector::Dist2D(Op->GetActorLocation(), BreachStand) > 70.0f || FMath::Abs(Op->GetActorLocation().Z - BreachStand.Z) > 150.0f)
 		{
 			MoveTowards(BreachStand, 30.0f);
 			return true;

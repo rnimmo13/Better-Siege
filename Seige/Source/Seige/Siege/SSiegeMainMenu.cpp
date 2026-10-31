@@ -24,7 +24,7 @@ namespace SiegeMenuStyle
 	const FLinearColor TextColor(0.92f, 0.93f, 0.95f);
 	const FLinearColor DimText(0.55f, 0.58f, 0.63f);
 
-	const FSlateBrush* White()
+	const FSlateBrush* MenuWhite()
 	{
 		return FCoreStyle::Get().GetBrush("GenericWhiteBox");
 	}
@@ -40,13 +40,13 @@ namespace SiegeMenuStyle
 		static FButtonStyle Style = []
 		{
 			FButtonStyle S;
-			S.Normal = *White();
+			S.Normal = *MenuWhite();
 			S.Normal.TintColor = FLinearColor(0.025f, 0.028f, 0.035f, 1.0f);
-			S.Hovered = *White();
+			S.Hovered = *MenuWhite();
 			S.Hovered.TintColor = FLinearColor(0.95f, 0.55f, 0.1f, 1.0f);
-			S.Pressed = *White();
+			S.Pressed = *MenuWhite();
 			S.Pressed.TintColor = FLinearColor(0.65f, 0.36f, 0.06f, 1.0f);
-			S.Disabled = *White();
+			S.Disabled = *MenuWhite();
 			S.Disabled.TintColor = FLinearColor(0.05f, 0.05f, 0.05f, 0.5f);
 			S.NormalPadding = FMargin(0.0f);
 			S.PressedPadding = FMargin(0.0f);
@@ -103,7 +103,7 @@ void SSiegeMainMenu::Construct(const FArguments& InArgs)
 		+ SOverlay::Slot()
 		[
 			SNew(SBorder)
-			.BorderImage(White())
+			.BorderImage(MenuWhite())
 			.BorderBackgroundColor(FLinearColor(0.006f, 0.007f, 0.01f, 1.0f))
 		]
 
@@ -119,7 +119,7 @@ void SSiegeMainMenu::Construct(const FArguments& InArgs)
 				.WidthOverride(480.0f)
 				[
 					SNew(SBorder)
-					.BorderImage(White())
+					.BorderImage(MenuWhite())
 					.BorderBackgroundColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.6f))
 					.Padding(FMargin(64.0f, 0.0f, 48.0f, 0.0f))
 					[
@@ -200,7 +200,7 @@ void SSiegeMainMenu::Construct(const FArguments& InArgs)
 				.Visibility_Lambda([this]() { return bSettingsOpen ? EVisibility::Visible : EVisibility::Collapsed; })
 				[
 					SNew(SBorder)
-					.BorderImage(White())
+					.BorderImage(MenuWhite())
 					.BorderBackgroundColor(FLinearColor(0.012f, 0.014f, 0.018f, 0.97f))
 					.Padding(32.0f)
 					[

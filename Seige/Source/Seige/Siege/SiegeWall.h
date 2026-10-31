@@ -116,6 +116,9 @@ public:
 	 */
 	bool CutDroneHoleAt(const FVector& WorldLocation, float HoleWidth = 50.0f, float HoleHeight = 50.0f);
 
+	/** Sets the material shown while the panel is not reinforced (plaster, brick, flooring...) */
+	void SetSurfaceMaterial(UMaterialInterface* Material);
+
 	/** Removes every cell whose center lies in a rectangle (panel width x height axes) around the world location */
 	bool CutRectAt(const FVector& WorldCenter, float SizeAlongWidth, float SizeAlongHeight);
 

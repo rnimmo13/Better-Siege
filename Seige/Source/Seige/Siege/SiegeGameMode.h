@@ -102,6 +102,9 @@ protected:
 	/** Site index (0 = A, 1 = B) attacker bots push this round */
 	int32 BotAttackSite = 0;
 
+	/** Which pair of bomb sites is in play this round (see SiegeLayout::BuildEmbassy) */
+	int32 SiteSet = 0;
+
 	/** Breaching gadgets whose bot breacher job is taken this round */
 	TSet<uint8> ClaimedBreachRoles;
 

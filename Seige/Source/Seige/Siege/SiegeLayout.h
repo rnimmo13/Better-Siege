@@ -38,9 +38,9 @@ struct FSiegeLayoutResult
 };
 
 /**
- *  Builds the greybox "Embassy" map at runtime: a two-room-deep building with two bomb sites,
- *  soft destructible walls, barricaded doors and windows, an upstairs office with a destructible floor
- *  above site A, and an exterior ramp. Rebuilt every round so destruction resets.
+ *  Builds the "Embassy" map at runtime: a brick building with a ground floor, a second floor over the north wing
+ *  and a basement under the south half, soft destructible walls and floors, barricaded doors and windows, furniture
+ *  and lights. Two bomb site pairs (ground floor or basement) are chosen per round. Rebuilt every round so destruction resets.
  */
 namespace SiegeLayout
 {
@@ -62,7 +62,14 @@ namespace SiegeLayout
 		EGapFill Fill = EGapFill::Open;
 	};
 
-	SEIGE_API void BuildEmbassy(UWorld* World, FSiegeLayoutResult& Out);
+	/** Number of bomb site pairs the Embassy can be played on */
+	static constexpr int32 NumSiteSets = 2;
+
+	/** Builds the map with the bomb sites of the given set: 0 = ground floor (A Office, B Server), 1 = basement (A Vault, B Generator) */
+	SEIGE_API void BuildEmbassy(UWorld* World, FSiegeLayoutResult& Out, int32 SiteSet = 0);
+
+	/** Readable name of a site set for messages */
+	SEIGE_API FString GetSiteSetName(int32 SiteSet);
 
 	SEIGE_API void Clear(FSiegeLayoutResult& Layout);
 }

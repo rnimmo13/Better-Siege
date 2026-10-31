@@ -376,7 +376,18 @@ void ASiegeGameMode::StartNewRound()
 		}
 	}
 
-	SiegeLayout::BuildEmbassy(GetWorld(), Layout);
+	// the defenders hold either the ground floor pair or the basement pair this round
+	SiteSet = FMath::RandRange(0, SiegeLayout::NumSiteSets - 1);
+
+	// -SiegeSites=N on the command line pins the site pair, for testing
+	int32 ForcedSiteSet = INDEX_NONE;
+	if (FParse::Value(FCommandLine::Get(), TEXT("SiegeSites="), ForcedSiteSet))
+	{
+		SiteSet = FMath::Clamp(ForcedSiteSet, 0, SiegeLayout::NumSiteSets - 1);
+	}
+
+	SiegeLayout::BuildEmbassy(GetWorld(), Layout, SiteSet);
+	UE_LOG(LogSeige, Log, TEXT("Sites: %s"), *SiegeLayout::GetSiteSetName(SiteSet));
 	BotAttackSite = FMath::RandRange(0, FMath::Max(0, Layout.Sites.Num() - 1));
 	ClaimedBreachRoles.Reset();
 
@@ -403,6 +414,7 @@ void ASiegeGameMode::StartNewRound()
 	GetWorldTimerManager().SetTimer(PhaseTimer, this, &ASiegeGameMode::BeginPreparation, OperatorSelectTime, false);
 
 	PostGlobalMessage(FString::Printf(TEXT("Round %d: your team is %s"), GS->RoundNumber, IsAttackingTeam(0) ? TEXT("ATTACKING") : TEXT("DEFENDING")));
+	PostGlobalMessage(FString::Printf(TEXT("Bomb sites: %s"), *SiegeLayout::GetSiteSetName(SiteSet)));
 }
 
 void ASiegeGameMode::RequestOperator(APlayerController* Player, int32 SideIndex)

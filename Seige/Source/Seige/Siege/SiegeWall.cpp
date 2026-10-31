@@ -25,9 +25,9 @@ ASiegeWall::ASiegeWall()
 		Cells->SetStaticMesh(CubeMesh.Object);
 	}
 
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> SoftMat(TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray.MI_PrototypeGrid_Gray"));
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ReinforcedMat(TEXT("/Game/LevelPrototyping/Materials/MI_PrototypeGrid_TopDark.MI_PrototypeGrid_TopDark"));
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BarricadeMat(TEXT("/Game/LevelPrototyping/Materials/MI_DefaultColorway.MI_DefaultColorway"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> SoftMat(TEXT("/Game/Siege/Materials/Env/MI_Env_Plaster.MI_Env_Plaster"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ReinforcedMat(TEXT("/Game/Siege/Materials/Env/MI_Env_Reinforced.MI_Env_Reinforced"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BarricadeMat(TEXT("/Game/Siege/Materials/Env/MI_Env_Barricade.MI_Env_Barricade"));
 
 	SoftMaterial = SoftMat.Object;
 	ReinforcedMaterial = ReinforcedMat.Object;
@@ -118,7 +118,7 @@ void ASiegeWall::UpdateMaterial()
 	{
 		Mat = ReinforcedMaterial;
 	}
-	else if (Kind == ESiegeWallKind::Barricade || Kind == ESiegeWallKind::Hatch)
+	else if (Kind == ESiegeWallKind::Barricade)
 	{
 		Mat = BarricadeMaterial;
 	}
@@ -351,4 +351,13 @@ float ASiegeWall::GetPenetrationFactor() const
 	}
 
 	return (Kind == ESiegeWallKind::Barricade || Kind == ESiegeWallKind::Hatch) ? 0.9f : 0.6f;
+}
+
+void ASiegeWall::SetSurfaceMaterial(UMaterialInterface* Material)
+{
+	if (Material && Kind != ESiegeWallKind::Barricade)
+	{
+		SoftMaterial = Material;
+		UpdateMaterial();
+	}
 }
