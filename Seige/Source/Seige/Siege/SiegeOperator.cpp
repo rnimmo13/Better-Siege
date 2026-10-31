@@ -1,6 +1,8 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SiegeOperator.h"
+#include "SiegeSound.h"
+#include "SiegeRope.h"
 #include "SiegeGun.h"
 #include "SiegeWall.h"
 #include "SiegeGadgets.h"
@@ -18,6 +20,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/SkeletalMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 
 ASiegeOperator::ASiegeOperator()
@@ -61,6 +64,64 @@ ASiegeOperator::ASiegeOperator()
 	{
 		FirstPersonBodyMesh->SetSkeletalMeshAsset(OperatorMeshNoHead.Object);
 	}
+
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShirtMat(TEXT("/Game/Siege/Materials/M_Team_Shirt.M_Team_Shirt"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> VestMat(TEXT("/Game/Siege/Materials/M_Team_Vest.M_Team_Vest"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> CapMat(TEXT("/Game/Siege/Materials/M_Team_Cap.M_Team_Cap"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> HiddenMat(TEXT("/Game/Siege/Materials/M_Invisible.M_Invisible"));
+	TeamShirtMaterial = ShirtMat.Object;
+	TeamVestMaterial = VestMat.Object;
+	TeamCapMaterial = CapMat.Object;
+	InvisibleMaterial = HiddenMat.Object;
+}
+
+void ASiegeOperator::ApplyTeamLook()
+{
+	// team 0 wears blue gear, team 1 red
+	const bool bBlue = GetTeam() == 0;
+	const FLinearColor GearTint = bBlue ? FLinearColor(0.25f, 0.55f, 1.8f) : FLinearColor(1.8f, 0.35f, 0.22f);
+	const FLinearColor ShirtTint = bBlue ? FLinearColor(0.8f, 1.0f, 1.4f) : FLinearColor(1.6f, 0.6f, 0.5f);
+
+	auto Tinted = [this](UMaterialInterface* Base, const FLinearColor& Tint) -> UMaterialInterface*
+	{
+		if (!Base)
+		{
+			return nullptr;
+		}
+
+		UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Base, this);
+		MID->SetVectorParameterValue(TEXT("TeamTint"), Tint);
+		return MID;
+	};
+
+	UMaterialInterface* Shirt = Tinted(TeamShirtMaterial, ShirtTint);
+	UMaterialInterface* Vest = Tinted(TeamVestMaterial, GearTint);
+	UMaterialInterface* Cap = Tinted(TeamCapMaterial, GearTint);
+
+	for (USkeletalMeshComponent* Body : { BodyMesh.Get(), FirstPersonBodyMesh.Get() })
+	{
+		if (!Body)
+		{
+			continue;
+		}
+
+		auto SetSlot = [Body](FName Slot, UMaterialInterface* Material)
+		{
+			const int32 Index = Body->GetMaterialIndex(Slot);
+			if (Material && Index != INDEX_NONE)
+			{
+				Body->SetMaterial(Index, Material);
+			}
+		};
+
+		SetSlot(TEXT("M_Shirt_RolledUp"), Shirt);
+		SetSlot(TEXT("M_Bulletproof_Light"), Vest);
+		SetSlot(TEXT("M_Cap"), Cap);
+
+		// the model has a pistol modelled in its holster; the real sidearm is the weapon actor
+		SetSlot(TEXT("M_Holster_Hard"), InvisibleMaterial);
+		SetSlot(TEXT("M_Pistol"), InvisibleMaterial);
+	}
 }
 
 void ASiegeOperator::BeginPlay()
@@ -68,6 +129,7 @@ void ASiegeOperator::BeginPlay()
 	Super::BeginPlay();
 
 	FirstPersonMeshBaseLocation = GetFirstPersonMesh()->GetRelativeLocation();
+	CameraBaseRelativeLocation = GetFirstPersonCameraComponent()->GetRelativeLocation();
 	BaseFieldOfView = GetFirstPersonCameraComponent()->FieldOfView;
 	BaseFirstPersonFieldOfView = GetFirstPersonCameraComponent()->FirstPersonFieldOfView;
 
@@ -121,6 +183,7 @@ void ASiegeOperator::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	EIC->BindAction(PC->GetSiegeAction(TEXT("Aim")), ETriggerEvent::Started, this, &ASiegeOperator::OnAimPressed);
 	EIC->BindAction(PC->GetSiegeAction(TEXT("Aim")), ETriggerEvent::Completed, this, &ASiegeOperator::OnAimReleased);
 	EIC->BindAction(PC->GetSiegeAction(TEXT("SwapWeapon")), ETriggerEvent::Started, this, &ASiegeOperator::OnSwapWeaponPressed);
+	EIC->BindAction(PC->GetSiegeAction(TEXT("Rappel")), ETriggerEvent::Started, this, &ASiegeOperator::OnRappelPressed);
 }
 
 void ASiegeOperator::OnObservePressed()
@@ -144,6 +207,8 @@ void ASiegeOperator::ApplyOperatorDef(const FSiegeOperatorDef& Def, int32 Reinfo
 	SecondaryGadgetCount = Def.SecondaryGadgetCount;
 	ReinforcementsLeft = Reinforcements;
 	DroneCount = Def.bAttacker ? 2 : 0;
+
+	ApplyTeamLook();
 
 	// the last weapon added becomes active, so add the sidearm first
 	if (Def.SecondaryWeapon)
@@ -189,12 +254,19 @@ void ASiegeOperator::Tick(float DeltaSeconds)
 		UpdateLean(DeltaSeconds);
 		UpdateAim(DeltaSeconds);
 		UpdateMovementSpeed();
+		UpdateFootsteps(DeltaSeconds);
 		return;
+	}
+
+	if (bRappelling)
+	{
+		UpdateRappel(DeltaSeconds);
 	}
 
 	UpdateLean(DeltaSeconds);
 	UpdateAim(DeltaSeconds);
 	UpdateMovementSpeed();
+	UpdateFootsteps(DeltaSeconds);
 	UpdateInteraction(DeltaSeconds);
 }
 
@@ -204,6 +276,13 @@ void ASiegeOperator::Tick(float DeltaSeconds)
 void ASiegeOperator::DoMove(float Right, float Forward)
 {
 	ForwardInput = Forward;
+	RightInput = Right;
+
+	// on a rope, the move keys climb and slide instead (see UpdateRappel)
+	if (bRappelling)
+	{
+		return;
+	}
 
 	// planting, disabling and reinforcing pin you in place
 	if (IsInteracting())
@@ -227,6 +306,13 @@ void ASiegeOperator::DoJumpStart()
 {
 	if (IsDead() || bDowned || IsInteracting())
 	{
+		return;
+	}
+
+	// on a rope, Space crashes through the window in front of you
+	if (bRappelling)
+	{
+		TryRappelEntry();
 		return;
 	}
 
@@ -284,7 +370,7 @@ void ASiegeOperator::ToggleCrouch()
 
 void ASiegeOperator::SetSprinting(bool bSprint)
 {
-	bSprintHeld = bSprint && !bDowned;
+	bSprintHeld = bSprint && !bDowned && !bRappelling;
 
 	if (bSprintHeld)
 	{
@@ -317,6 +403,31 @@ void ASiegeOperator::UpdateAim(float DeltaSeconds)
 	UCameraComponent* Camera = GetFirstPersonCameraComponent();
 	Camera->SetFieldOfView(FMath::Lerp(BaseFieldOfView, BaseFieldOfView * AimFOVMultiplier, AimAlpha));
 	Camera->FirstPersonFieldOfView = FMath::Lerp(BaseFirstPersonFieldOfView, BaseFirstPersonFieldOfView * 0.85f, AimAlpha);
+}
+
+void ASiegeOperator::UpdateFootsteps(float DeltaSeconds)
+{
+	const float Speed = GetVelocity().Size2D();
+	if (!GetCharacterMovement()->IsMovingOnGround() || Speed < 40.0f)
+	{
+		FootstepDistance = 0.0f;
+		return;
+	}
+
+	FootstepDistance += Speed * DeltaSeconds;
+
+	// sprinting is loud, crouch-walking and crawling are nearly silent
+	const bool bSprinting = IsSprinting();
+	const float Stride = bDowned ? 90.0f : (bSprinting ? 170.0f : (bIsCrouched ? 110.0f : 140.0f));
+
+	if (FootstepDistance >= Stride)
+	{
+		FootstepDistance = 0.0f;
+
+		const float Volume = bDowned ? 0.15f : (bSprinting ? 1.0f : (bIsCrouched ? 0.2f : (AimAlpha > 0.5f ? 0.35f : 0.55f)));
+		const FVector Feet = GetActorLocation() - FVector(0.0f, 0.0f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+		USiegeSoundSubsystem::Play(this, ESiegeSound::Footstep, Feet, Volume, this, GetTeam());
+	}
 }
 
 void ASiegeOperator::DoAim(float Yaw, float Pitch)
@@ -363,9 +474,39 @@ void ASiegeOperator::UpdateLean(float DeltaSeconds)
 	CurrentLean = FMath::FInterpTo(CurrentLean, TargetLean, DeltaSeconds, 10.0f);
 
 	// shift the first person rig sideways so the camera peeks around cover
-	const FVector WorldOffset = GetActorRightVector() * (CurrentLean * LeanDistance) + FVector(0.0f, 0.0f, -FMath::Abs(CurrentLean) * 6.0f);
-	const FVector LocalOffset = GetMesh()->GetComponentTransform().InverseTransformVectorNoScale(WorldOffset);
-	GetFirstPersonMesh()->SetRelativeLocation(FirstPersonMeshBaseLocation + LocalOffset);
+	const FVector LeanOffset = GetActorRightVector() * (CurrentLean * LeanDistance) + FVector(0.0f, 0.0f, -FMath::Abs(CurrentLean) * 6.0f);
+
+	// true aim down sights: slide the arms and gun so the weapon's own sight sits on the camera's view axis.
+	// the camera is a child of the arms rig, so it gets the opposite offset and stays where it is
+	UCameraComponent* Camera = GetFirstPersonCameraComponent();
+	FVector AdsOffset = FVector::ZeroVector;
+
+	const ASiegeGun* Gun = GetCurrentGun();
+	if (Gun && Cast<APlayerController>(GetController()) && !bDowned)
+	{
+		const FVector CamRight = Camera->GetRightVector();
+		const FVector CamUp = Camera->GetUpVector();
+		const FVector ToSight = Gun->GetSightWorldLocation() - Camera->GetComponentLocation();
+
+		// where the sight would be without our current correction
+		const FVector2D RawSight(FVector::DotProduct(ToSight, CamRight) - AppliedAdsOffset.X, FVector::DotProduct(ToSight, CamUp) - AppliedAdsOffset.Y);
+		AppliedAdsOffset = -RawSight * AimAlpha;
+
+		AdsOffset = CamRight * AppliedAdsOffset.X + CamUp * AppliedAdsOffset.Y;
+	}
+	else
+	{
+		AppliedAdsOffset = FVector2D::ZeroVector;
+	}
+
+	const FVector RigOffsetLocal = GetMesh()->GetComponentTransform().InverseTransformVectorNoScale(LeanOffset + AdsOffset);
+	GetFirstPersonMesh()->SetRelativeLocation(FirstPersonMeshBaseLocation + RigOffsetLocal);
+
+	if (const USceneComponent* CameraParent = Camera->GetAttachParent())
+	{
+		const FTransform ParentTransform = CameraParent->GetSocketTransform(Camera->GetAttachSocketName());
+		Camera->SetRelativeLocation(CameraBaseRelativeLocation + ParentTransform.InverseTransformVectorNoScale(-AdsOffset));
+	}
 
 	// tilt the view for local players
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -534,6 +675,11 @@ void ASiegeOperator::FinishDeath(AController* Killer, bool bHeadshot)
 
 void ASiegeOperator::EnterDowned(AController* Downer)
 {
+	if (bRappelling)
+	{
+		StopRappel(false);
+	}
+
 	bDowned = true;
 	DownedBy = Downer;
 	CurrentHP = DownedHealth;
@@ -614,6 +760,7 @@ void ASiegeOperator::Die()
 	}
 
 	StopInteract();
+	bRappelling = false;
 
 	Tags.Add(DeathTag);
 
@@ -1037,10 +1184,13 @@ void ASiegeOperator::Melee()
 
 	AActor* HitActor = Hit.GetActor();
 
+	USiegeSoundSubsystem::Play(this, ESiegeSound::Melee, Hit.ImpactPoint, 0.8f, this, GetTeam());
+
 	if (ASiegeWall* Wall = Cast<ASiegeWall>(HitActor))
 	{
 		// melee smashes a chunk out of barricades and a small hole in soft walls
 		Wall->ApplyExplosion(Hit.ImpactPoint, (Wall->IsBarricade() || Wall->IsHatch()) ? 55.0f : 20.0f, false);
+		USiegeSoundSubsystem::Play(this, ESiegeSound::Crunch, Hit.ImpactPoint, 1.0f, this, GetTeam());
 	}
 	else if (HitActor)
 	{
@@ -1059,4 +1209,169 @@ void ASiegeOperator::RevealTo(uint8 ViewingTeam, float Duration)
 bool ASiegeOperator::IsRevealedTo(uint8 ViewingTeam) const
 {
 	return ViewingTeam < 2 && RevealedUntil[ViewingTeam] > GetWorld()->GetTimeSeconds();
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Rappelling
+
+ASiegeRopeAnchor* ASiegeOperator::FindAttachableRope(float& OutAlong, float& OutHeight) const
+{
+	const ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>();
+	if (!GM || IsDead() || bDowned || !GM->IsAttackingTeam(GetTeam()) || !GM->CanTeamMove(GetTeam()))
+	{
+		return nullptr;
+	}
+
+	const FVector Feet = GetActorLocation() - FVector(0.0f, 0.0f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+
+	for (TActorIterator<ASiegeRopeAnchor> It(GetWorld()); It; ++It)
+	{
+		if (It->CanAttach(Feet, OutAlong, OutHeight))
+		{
+			return *It;
+		}
+	}
+
+	return nullptr;
+}
+
+void ASiegeOperator::ToggleRappel()
+{
+	if (bRappelling)
+	{
+		StopRappel();
+		return;
+	}
+
+	float Along = 0.0f;
+	float Height = 0.0f;
+	if (ASiegeRopeAnchor* Anchor = FindAttachableRope(Along, Height))
+	{
+		StartRappel(Anchor, Along, Height);
+	}
+}
+
+void ASiegeOperator::StartRappel(ASiegeRopeAnchor* Anchor, float Along, float Height)
+{
+	if (!Anchor)
+	{
+		return;
+	}
+
+	StopInteract();
+
+	if (bIsCrouched)
+	{
+		UnCrouch();
+	}
+
+	bSprintHeld = false;
+	bRappelling = true;
+	RappelAnchor = Anchor;
+	RappelAlong = Along;
+	RappelHeight = Height;
+
+	GetCharacterMovement()->StopMovementImmediately();
+	GetCharacterMovement()->SetMovementMode(MOVE_Flying);
+
+	// turn to face the wall
+	if (AController* C = GetController())
+	{
+		C->SetControlRotation(FRotator(0.0f, (-Anchor->GetOutward()).Rotation().Yaw, 0.0f));
+	}
+
+	USiegeSoundSubsystem::Play(this, ESiegeSound::Rope, GetActorLocation(), 1.0f, this, GetTeam());
+}
+
+void ASiegeOperator::StopRappel(bool bPlaySound)
+{
+	if (!bRappelling)
+	{
+		return;
+	}
+
+	bRappelling = false;
+	RappelAnchor.Reset();
+	GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+
+	if (bPlaySound)
+	{
+		USiegeSoundSubsystem::Play(this, ESiegeSound::Rope, GetActorLocation(), 0.7f, this, GetTeam());
+	}
+}
+
+void ASiegeOperator::UpdateRappel(float DeltaSeconds)
+{
+	ASiegeRopeAnchor* Anchor = RappelAnchor.Get();
+	if (!Anchor)
+	{
+		StopRappel(false);
+		return;
+	}
+
+	// W/S climb, A/D slide along the facade
+	RappelHeight = FMath::Clamp(RappelHeight + ForwardInput * RappelClimbSpeed * DeltaSeconds, 0.0f, Anchor->Height - 200.0f);
+	RappelAlong = FMath::Clamp(RappelAlong + RightInput * RappelSideSpeed * DeltaSeconds, -Anchor->HalfWidth, Anchor->HalfWidth);
+
+	// climbing down to the ground lets go
+	if (RappelHeight <= 0.0f && ForwardInput < -0.1f)
+	{
+		StopRappel();
+		return;
+	}
+
+	const FVector Target = Anchor->GetHangLocation(RappelAlong, RappelHeight, GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+	SetActorLocation(Target, true);
+	GetCharacterMovement()->Velocity = FVector::ZeroVector;
+
+	// move inputs were consumed; they're re-sent every frame while held
+	ForwardInput = 0.0f;
+	RightInput = 0.0f;
+}
+
+bool ASiegeOperator::TryRappelEntry()
+{
+	ASiegeRopeAnchor* Anchor = RappelAnchor.Get();
+	if (!Anchor)
+	{
+		return false;
+	}
+
+	FHitResult Hit;
+	ASiegeWall* Window = TraceForWall(160.0f, Hit);
+
+	if (!Window || !Window->IsBarricade())
+	{
+		if (ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>())
+		{
+			GM->PostPlayerMessage(this, TEXT("Line up with a window barricade to crash through"));
+		}
+		return false;
+	}
+
+	// smash the barricade and swing in, crouched to fit through the frame
+	Window->DestroyAllCells();
+	USiegeSoundSubsystem::Play(this, ESiegeSound::Crunch, Hit.ImpactPoint, 1.4f, this, GetTeam());
+
+	const FVector Inside = Window->GetActorLocation() - Anchor->GetOutward() * 90.0f;
+
+	StopRappel(false);
+	Crouch();
+
+	FVector Landing = Inside;
+	Landing.Z = Hit.ImpactPoint.Z;
+	SetActorLocation(Landing, false, nullptr, ETeleportType::TeleportPhysics);
+	return true;
+}
+
+FString ASiegeOperator::GetRappelPrompt() const
+{
+	if (bRappelling)
+	{
+		return TEXT("[W/S] climb   [A/D] slide   [Space] crash through window   [T] let go");
+	}
+
+	float Along = 0.0f;
+	float Height = 0.0f;
+	return FindAttachableRope(Along, Height) ? TEXT("Press [T] to rappel") : FString();
 }

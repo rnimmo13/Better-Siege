@@ -3,6 +3,7 @@
 #include "SiegeLayout.h"
 #include "SiegeObjective.h"
 #include "SiegeObservation.h"
+#include "SiegeRope.h"
 #include "SiegeTypes.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/StaticMesh.h"
@@ -234,6 +235,20 @@ namespace SiegeLayout
 			Block(FVector(Mid.X, Mid.Y, InnerHeight + Roof * 0.5f), RoofSize, FRotator::ZeroRotator, GroundMaterial);
 		}
 
+		ASiegeRopeAnchor* Rope(const FVector& BaseOnWall, float OutwardYaw, float Height)
+		{
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			ASiegeRopeAnchor* Anchor = World->SpawnActor<ASiegeRopeAnchor>(ASiegeRopeAnchor::StaticClass(), BaseOnWall, FRotator(0.0f, OutwardYaw, 0.0f), Params);
+			if (Anchor)
+			{
+				Anchor->InitRope(Height);
+				Out->Actors.Add(Anchor);
+			}
+			return Anchor;
+		}
+
 		ASiegeSecurityCamera* SecurityCamera(const FString& Name, const FVector& Location, float Yaw)
 		{
 			FActorSpawnParameters Params;
@@ -287,6 +302,18 @@ namespace SiegeLayout
 		Gap.Bottom = 0.0f;
 		Gap.Top = 45.0f;
 		Gap.Fill = EGapFill::Open;
+		return Gap;
+	}
+
+	/** Floor-to-head-height window big enough to rappel through when crouched */
+	static FGap TallWindow(float Center, float Width = 140.0f)
+	{
+		FGap Gap;
+		Gap.Center = Center;
+		Gap.Width = Width;
+		Gap.Bottom = 20.0f;
+		Gap.Top = 230.0f;
+		Gap.Fill = EGapFill::Barricade;
 		return Gap;
 	}
 
@@ -382,7 +409,7 @@ namespace SiegeLayout
 
 		// upstairs rooms: Upstairs Office (above A), Library (above the lounge), Archive (above B)
 		B.WallRun(FVector2D(-1500, 150), FVector2D(1500, 150), UZ, H, true, false, { Window(500.0f), Door(1270.0f, 120.0f), Window(2500.0f) }, TEXT("Upstairs Hall Side"));
-		B.WallRun(FVector2D(-1500, 1000), FVector2D(1500, 1000), UZ, H, true, false, { Window(500.0f), Window(1500.0f), Window(2500.0f) }, TEXT("Upstairs North"));
+		B.WallRun(FVector2D(-1500, 1000), FVector2D(1500, 1000), UZ, H, true, false, { TallWindow(500.0f), TallWindow(1500.0f), TallWindow(2500.0f) }, TEXT("Upstairs North"));
 		B.WallRun(FVector2D(-1500, 150), FVector2D(-1500, 1000), UZ, H, false, false, { Door(550.0f, 140.0f) }, TEXT("Upstairs Office"));
 		B.WallRun(FVector2D(1500, 150), FVector2D(1500, 1000), UZ, H, false, false, {}, TEXT("Archive"));
 		B.WallRun(FVector2D(-500, 150), FVector2D(-500, 1000), UZ, H, true, false, { Door(550.0f) }, TEXT("Library"));
@@ -468,6 +495,12 @@ namespace SiegeLayout
 		B.DroneTunnel(FVector2D(-2050.0f, -700.0f), FVector2D(-1515.0f, -700.0f), TEXT("Kitchen Duct"));	// west yard -> kitchen
 		B.DroneHole(320.0f, 1000.0f, 0.0f);
 		B.DroneHole(-1500.0f, -700.0f, 0.0f);
+
+		// ----- rappel points on the north facade, under the tall upstairs windows -----
+		for (float RopeX : { -1000.0f, 0.0f, 1000.0f })
+		{
+			B.Rope(FVector(RopeX, 1012.0f, 0.0f), 90.0f, UZ + H + 20.0f);
+		}
 
 		// ----- defender security cameras -----
 		B.SecurityCamera(TEXT("Cam: West Hall"), FVector(-1470.0f, 0.0f, 270.0f), 0.0f);

@@ -320,11 +320,12 @@ void ASiegeHUD::DrawCrosshair(ASiegeOperator* Op)
 	const float T = FMath::Max(1.0f, 2.0f * UIScale);
 	const FLinearColor Color = Op->IsSprinting() ? FLinearColor(1, 1, 1, 0.25f) : FLinearColor(1, 1, 1, 0.9f);
 
-	// aimed down sights: just a red dot; the cross lines fade out as you zoom in
+	// the cross lines fade out as you raise the sights
 	const float Aim = Op->GetAimAlpha();
-	const float DotSize = FMath::Lerp(T, 4.0f * UIScale, Aim);
-	const FLinearColor DotColor = FLinearColor::LerpUsingHSV(Color, FLinearColor(1.0f, 0.15f, 0.1f, 1.0f), Aim);
-	Box(CX - DotSize * 0.5f, CY - DotSize * 0.5f, DotSize, DotSize, DotColor);
+	// looking down the gun's own sight replaces the crosshair entirely
+	FLinearColor DotColor = Color;
+	DotColor.A *= FMath::Clamp(1.0f - Aim * 1.4f, 0.0f, 1.0f);
+	Box(CX - T * 0.5f, CY - T * 0.5f, T, T, DotColor);
 
 	FLinearColor LineColor = Color;
 	LineColor.A *= 1.0f - Aim;
@@ -371,6 +372,7 @@ void ASiegeHUD::DrawInteraction(ASiegeOperator* Op)
 	}
 
 	Text(Op->GetInteractPrompt(), CX, Y, White, MediumFont, 1.0f, 0.5f);
+	Text(Op->GetRappelPrompt(), CX, Y + 30.0f * UIScale, Op->IsRappelling() ? Dim : White, SmallFont, 1.0f, 0.5f);
 }
 
 void ASiegeHUD::DrawWorldMarkers(ASiegeGameState* GS)
@@ -708,6 +710,6 @@ void ASiegeHUD::DrawControlsHelp(ASiegeGameState* GS)
 		return;
 	}
 
-	const FString Help = TEXT("[RMB] aim  [Wheel] swap weapon  [X] drones/cameras  [WASD] move  [Shift] sprint  [Ctrl/C] crouch  [Q/E] lean  [Space] vault  [R] reload  [V] melee  [F] interact  [G] gadget  [B] secondary  [Tab] scores");
+	const FString Help = TEXT("[RMB] aim  [Wheel] swap weapon  [T] rappel  [X] drones/cameras  [WASD] move  [Shift] sprint  [Ctrl/C] crouch  [Q/E] lean  [Space] vault  [R] reload  [V] melee  [F] interact  [G] gadget  [B] secondary  [Tab] scores");
 	Text(Help, Canvas->ClipX * 0.5f, Canvas->ClipY - 150.0f * UIScale, Dim, SmallFont, 1.0f, 0.5f);
 }

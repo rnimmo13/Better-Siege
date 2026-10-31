@@ -1116,3 +1116,14 @@ bool ASiegeGameMode::TryClaimBreachRole(ESiegeGadget Gadget)
 	ClaimedBreachRoles.Add(Key);
 	return true;
 }
+
+void ASiegeGameMode::ReportNoise(const FVector& Location, float Loudness, uint8 SourceTeam)
+{
+	for (ASiegeBotController* Bot : Bots)
+	{
+		if (IsValid(Bot))
+		{
+			Bot->OnHeardNoise(Location, Loudness, SourceTeam);
+		}
+	}
+}

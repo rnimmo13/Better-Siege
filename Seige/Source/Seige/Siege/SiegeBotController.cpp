@@ -363,6 +363,11 @@ void ASiegeBotController::UpdateCombat(ASiegeOperator* Op, float Now)
 		{
 			SetFocalPoint(LastKnownEnemyLocation + FVector(0, 0, 60.0f), EAIFocusPriority::Gameplay);
 		}
+		else if (Now - LastHeardTime < 2.5f)
+		{
+			// turn toward what we just heard
+			SetFocalPoint(LastHeardLocation + FVector(0, 0, 60.0f), EAIFocusPriority::Gameplay);
+		}
 		else
 		{
 			ClearFocus(EAIFocusPriority::Gameplay);
@@ -924,4 +929,26 @@ bool ASiegeBotController::UpdateBreach(ASiegeGameMode* GM, ASiegeOperator* Op, f
 	default:
 		return false;
 	}
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Hearing
+
+void ASiegeBotController::OnHeardNoise(const FVector& Location, float Loudness, uint8 SourceTeam)
+{
+	const ASiegeOperator* Op = GetOperator();
+	if (!Op || Op->IsDead() || Op->IsDowned() || SourceTeam == Op->GetTeam())
+	{
+		return;
+	}
+
+	// louder sounds carry further; a gunshot is heard across the map, footsteps only nearby
+	const float HearingRange = 2500.0f * Loudness;
+	if (FVector::Dist(Op->GetActorLocation(), Location) > HearingRange)
+	{
+		return;
+	}
+
+	LastHeardLocation = Location;
+	LastHeardTime = GetWorld()->GetTimeSeconds();
 }

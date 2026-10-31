@@ -82,7 +82,10 @@ protected:
 	int32 NumCols = 0;
 	int32 NumRows = 0;
 
-	/** Cells removed at build time for drone holes; they don't count as damage */
+	/** Last time a breaking-piece sound played */
+	float LastBreakSoundTime = -1.0f;
+
+		/** Cells removed at build time for drone holes; they don't count as damage */
 	int32 PreCutCells = 0;
 
 	/** Number of active shock boxes attached to this panel */

@@ -76,6 +76,7 @@ void ASiegePlayerController::EnsureSiegeInput()
 	MakeAction(TEXT("Observe"), { EKeys::X });
 	MakeAction(TEXT("Aim"), { EKeys::RightMouseButton });
 	MakeAction(TEXT("SwapWeapon"), { EKeys::MouseScrollUp, EKeys::MouseScrollDown });
+	MakeAction(TEXT("Rappel"), { EKeys::T });
 
 	// spectating shares LMB and Space with Fire and Vault; let those keys reach the lower priority contexts too
 	SiegeActions[TEXT("SpectateNext")]->bConsumeInput = false;

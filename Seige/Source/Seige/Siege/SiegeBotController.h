@@ -65,6 +65,10 @@ protected:
 	/** Last time a standing (not downed) enemy was in sight */
 	float LastStandingEnemySeenTime = -100.0f;
 
+	/** Last enemy noise heard */
+	FVector LastHeardLocation = FVector::ZeroVector;
+	float LastHeardTime = -100.0f;
+
 	bool bFiring = false;
 	float BurstEndTime = 0.0f;
 	float NextBurstTime = 0.0f;
@@ -106,7 +110,10 @@ public:
 
 	virtual void Tick(float DeltaSeconds) override;
 
-	/** Keeps aim pitch toward focal points (the engine zeroes it unless focusing a pawn) and limits turn rate */
+	/** Called by the game mode for every sound in the world */
+	void OnHeardNoise(const FVector& Location, float Loudness, uint8 SourceTeam);
+
+		/** Keeps aim pitch toward focal points (the engine zeroes it unless focusing a pawn) and limits turn rate */
 	virtual void UpdateControlRotation(float DeltaTime, bool bUpdatePawn = true) override;
 
 protected:

@@ -45,6 +45,22 @@ class SEIGE_API ASiegeOperator : public AShooterCharacter
 	UPROPERTY(VisibleAnywhere, Category="Components")
 	TObjectPtr<USkeletalMeshComponent> FirstPersonBodyMesh;
 
+	/** Tintable outfit materials (TeamTint vector parameter) and an invisible material for hidden parts */
+	UPROPERTY(EditDefaultsOnly, Category="Siege|Look")
+	TObjectPtr<UMaterialInterface> TeamShirtMaterial;
+
+	UPROPERTY(EditDefaultsOnly, Category="Siege|Look")
+	TObjectPtr<UMaterialInterface> TeamVestMaterial;
+
+	UPROPERTY(EditDefaultsOnly, Category="Siege|Look")
+	TObjectPtr<UMaterialInterface> TeamCapMaterial;
+
+	UPROPERTY(EditDefaultsOnly, Category="Siege|Look")
+	TObjectPtr<UMaterialInterface> InvisibleMaterial;
+
+	/** Recolors the outfit for this operator's team and hides the model's built-in holster pistol */
+	void ApplyTeamLook();
+
 protected:
 
 	/** Definition this operator was spawned with */
@@ -119,12 +135,16 @@ protected:
 	bool bLeanRightHeld = false;
 
 	FVector FirstPersonMeshBaseLocation = FVector::ZeroVector;
+	FVector CameraBaseRelativeLocation = FVector::ZeroVector;
+
+	/** Current aim-down-sights correction in camera space (right, up) */
+	FVector2D AppliedAdsOffset = FVector2D::ZeroVector;
 
 	bool bSprintHeld = false;
 
 	/** Aim down sights */
 	UPROPERTY(EditAnywhere, Category="Siege|Aim")
-	float AimFOVMultiplier = 0.72f;
+	float AimFOVMultiplier = 0.82f;
 
 	UPROPERTY(EditAnywhere, Category="Siege|Aim")
 	float AimSpeedMultiplier = 0.55f;
@@ -138,6 +158,8 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Siege|Aim")
 	float AimLookSensitivity = 0.6f;
 
+	/** Holding aim down sights. Editable on instances so the sight alignment can be checked without input */
+	UPROPERTY(EditInstanceOnly, Transient, Category="Siege|Aim")
 	bool bAimHeld = false;
 	float AimAlpha = 0.0f;
 	float BaseFieldOfView = 90.0f;
@@ -287,6 +309,17 @@ public:
 	/** Human readable prompt for the HUD */
 	FString GetInteractPrompt() const;
 
+	/** Rappel hint for the HUD (attach prompt or rope controls) */
+	FString GetRappelPrompt() const;
+
+	/** Attaches to a nearby rope, or lets go if already rappelling */
+	void ToggleRappel();
+
+	/** Lets go of the rope and falls */
+	void StopRappel(bool bPlaySound = true);
+
+	bool IsRappelling() const { return bRappelling; }
+
 protected:
 
 	virtual void BeginPlay() override;
@@ -321,6 +354,34 @@ protected:
 	void OnAimReleased() { SetAiming(false); }
 	void OnSwapWeaponPressed() { if (!IsInteracting()) { DoSwitchWeapon(); } }
 	void UpdateAim(float DeltaSeconds);
+	void UpdateFootsteps(float DeltaSeconds);
+
+	// ~Begin rappelling
+	bool bRappelling = false;
+	TWeakObjectPtr<class ASiegeRopeAnchor> RappelAnchor;
+	float RappelAlong = 0.0f;
+	float RappelHeight = 0.0f;
+	float RightInput = 0.0f;
+
+	UPROPERTY(EditAnywhere, Category="Siege|Rappel", meta=(Units="cm/s"))
+	float RappelClimbSpeed = 160.0f;
+
+	UPROPERTY(EditAnywhere, Category="Siege|Rappel", meta=(Units="cm/s"))
+	float RappelSideSpeed = 120.0f;
+
+	void OnRappelPressed() { ToggleRappel(); }
+	void StartRappel(class ASiegeRopeAnchor* Anchor, float Along, float Height);
+	void UpdateRappel(float DeltaSeconds);
+
+	/** Smashes through a window barricade in front while rappelling. Returns true if we went in */
+	bool TryRappelEntry();
+
+	/** Returns a rope this operator could attach to right now */
+	class ASiegeRopeAnchor* FindAttachableRope(float& OutAlong, float& OutHeight) const;
+	// ~End rappelling
+
+	/** Distance walked since the last footstep sound */
+	float FootstepDistance = 0.0f;
 	void OnSprintPressed() { SetSprinting(true); }
 	void OnSprintReleased() { SetSprinting(false); }
 };

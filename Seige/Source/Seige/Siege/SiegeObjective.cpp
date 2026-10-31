@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SiegeObjective.h"
+#include "SiegeSound.h"
 #include "SiegeGameMode.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -122,6 +123,14 @@ void ASiegeDevice::Tick(float DeltaSeconds)
 	}
 
 	TimeRemaining -= DeltaSeconds;
+
+	// beep once a second, giving defenders something to listen for
+	BeepTimer -= DeltaSeconds;
+	if (BeepTimer <= 0.0f)
+	{
+		BeepTimer = TimeRemaining < 10.0f ? 0.5f : 1.0f;
+		USiegeSoundSubsystem::Play(this, ESiegeSound::Beep, GetActorLocation(), 1.2f, this);
+	}
 
 	// pulse the light faster as the countdown runs out
 	const float PulseRate = FMath::GetMappedRangeValueClamped(FVector2D(45.0f, 0.0f), FVector2D(1.0f, 6.0f), TimeRemaining);

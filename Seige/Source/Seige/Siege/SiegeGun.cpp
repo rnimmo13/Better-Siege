@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SiegeGun.h"
+#include "SiegeSound.h"
 #include "Seige.h"
 #include "SiegeOperator.h"
 #include "SiegeWall.h"
@@ -132,6 +133,8 @@ void ASiegeGun::FireProjectile(const FVector& TargetLocation)
 		DrawDebugPoint(GetWorld(), TracerEnd, 4.0f, FColor(255, 160, 60), false, 0.5f);
 	}
 
+	USiegeSoundSubsystem::Play(this, MagazineSize <= 15 ? ESiegeSound::PistolShot : ESiegeSound::RifleShot, Start, 1.0f, GetOwner(), Op ? Op->GetTeam() : 255);
+
 	// play the firing montage and recoil
 	WeaponOwner->PlayFiringMontage(FiringMontage);
 	WeaponOwner->AddWeaponRecoil(FiringRecoil);
@@ -145,6 +148,17 @@ void ASiegeGun::FireProjectile(const FVector& TargetLocation)
 		StopFiring();
 		Reload();
 	}
+}
+
+FVector ASiegeGun::GetSightWorldLocation() const
+{
+	const USkeletalMeshComponent* Mesh = GetFirstPersonMesh();
+	if (!Mesh->DoesSocketExist(MuzzleSocketName))
+	{
+		return Mesh->GetComponentLocation();
+	}
+
+	return Mesh->GetSocketTransform(MuzzleSocketName).TransformPosition(SightOffsetFromMuzzle);
 }
 
 float ASiegeGun::GetDamageAtDistance(float Distance) const

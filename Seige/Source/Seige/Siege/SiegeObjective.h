@@ -66,6 +66,8 @@ protected:
 
 	bool bDetonated = false;
 
+	float BeepTimer = 0.0f;
+
 	/** Name of the site this device was planted on */
 	FString SiteName;
 

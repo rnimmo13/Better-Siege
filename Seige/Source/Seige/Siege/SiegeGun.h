@@ -60,6 +60,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Siege|Gun")
 	int32 MaxPenetrations = 2;
 
+	/** Where the weapon's sight is, relative to the muzzle socket (x forward, z up). Used to line up aim down sights */
+	UPROPERTY(EditAnywhere, Category="Siege|Gun")
+	FVector SightOffsetFromMuzzle = FVector(-42.0f, 0.0f, 5.5f);
+
 	/** If true, draw short-lived tracer lines for fired bullets */
 	UPROPERTY(EditAnywhere, Category="Siege|Gun")
 	bool bDrawTracers = true;
@@ -84,6 +88,9 @@ public:
 	int32 GetReserveAmmo() const { return ReserveAmmo; }
 	const FString& GetGunName() const { return GunName; }
 	bool IsFullAuto() const { return bFullAuto; }
+
+	/** World location of the first-person weapon's sight */
+	FVector GetSightWorldLocation() const;
 
 protected:
 

@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SiegeGadgets.h"
+#include "SiegeSound.h"
 #include "Seige.h"
 #include "SiegeWall.h"
 #include "SiegeOperator.h"
@@ -90,6 +91,8 @@ namespace SiegeExplosion
 			}
 		}
 
+		USiegeSoundSubsystem::Play(World, ESiegeSound::Explosion, Location, MaxDamage >= 300.0f ? 1.5f : 1.0f, Causer);
+
 		// drones and cameras caught in the blast
 		TArray<APawn*> Devices;
 		for (TActorIterator<APawn> It(World); It; ++It)
@@ -161,6 +164,9 @@ void ASiegeGadgetBase::InitGadget(ASiegeOperator* InOwner, ASiegeWall* InWall)
 	OwnerOperator = InOwner;
 	OwnerTeam = InOwner ? InOwner->GetTeam() : 0;
 	AttachedWall = InWall;
+
+	// every deployed gadget gives itself away with a beep
+	USiegeSoundSubsystem::Play(this, ESiegeSound::Beep, GetActorLocation(), 1.0f, this, OwnerTeam);
 }
 
 float ASiegeGadgetBase::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
@@ -224,6 +230,12 @@ void ASiegeBreachCharge::InitGadget(ASiegeOperator* InOwner, ASiegeWall* InWall)
 	if (InWall && InWall->IsElectrified())
 	{
 		Fizzle(TEXT("Charge destroyed: the wall is electrified"));
+		return;
+	}
+
+	if (bHardBreach)
+	{
+		USiegeSoundSubsystem::Play(this, ESiegeSound::ThermalHiss, GetActorLocation(), 1.0f, this, OwnerTeam);
 	}
 }
 

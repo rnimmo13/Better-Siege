@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SiegeWall.h"
+#include "SiegeSound.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/DamageEvents.h"
@@ -178,6 +179,14 @@ float ASiegeWall::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACon
 		{
 			CellHP[CellIndex] = 0.0f;
 			RebuildInstances();
+
+			// splintering when a piece breaks off, throttled so full-auto fire does not stack dozens of sounds
+			const float Now = GetWorld()->GetTimeSeconds();
+			if (Now - LastBreakSoundTime > 0.08f)
+			{
+				LastBreakSoundTime = Now;
+				USiegeSoundSubsystem::Play(this, ESiegeSound::Crunch, HitLocation, IsBarricade() ? 0.8f : 0.5f, this);
+			}
 		}
 	}
 

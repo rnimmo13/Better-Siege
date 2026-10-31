@@ -152,6 +152,9 @@ public:
 	void OnOperatorKilled(ASiegeOperator* Victim, AController* Killer, bool bHeadshot);
 	void OnOperatorDowned(ASiegeOperator* Victim, AController* Downer);
 
+	/** Lets bots hear a sound. Loudness 1 = gunshot. SourceTeam 255 = heard by everyone */
+	void ReportNoise(const FVector& Location, float Loudness, uint8 SourceTeam);
+
 	/** An operator can only go down (instead of dying) while a teammate is still standing to revive them */
 	bool CanOperatorGoDown(const ASiegeOperator* Victim) const;
 
