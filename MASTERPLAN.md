@@ -12,7 +12,8 @@ Reference design brief for Better Siege. Use this document as the north star for
 | 2. Information | Attacker recon drones (2 each, auto-deployed in preparation), defender security cameras, manual and passive spotting, eliminated players watch drones/cameras, bots drone the target site and shoot enemy drones/cameras, 45s attacker preparation | Done |
 | 2.1 Aim & drone routes | Aim down sights on RMB (zoom, tighter spread, less recoil, slower movement and look); mouse wheel weapon swap; floor-level drone holes in walls, 25cm drone gap under door barricades, three hidden drone-only tunnels (Storm Drain into site B, Lounge Vent, Kitchen Duct); drone headlight | Done |
 | 3. Survival, vertical play, breaching | Down-but-not-out (body-shot kills down you if a teammate is standing; 25 HP bleeding out, crawl, revive with F in 4s), bots revive teammates and hold fire on downed enemies; second floor over the whole north wing (Upstairs Office, Library, Archive) with destructible floors, structural beams left under blown floors, three hatches (two reinforceable site hatches), interior hallway staircase; attacker bots take breacher jobs — Ram opens soft site walls with breach charges, Torch burns reinforced site walls with thermal charges | Done |
-| Next | Rappelling, ladders under hatches, UMG HUD, sound propagation through openings, basement, more maps and operators | Planned |
+| 4. Sound, rappelling, true ADS, team identity | Footsteps/gunfire/breach/barricade/rappel/gadget sounds that travel through doors and openings (destruction changes the paths), bots react to sounds; attacker rappelling on exterior walls with window peeks and window entries; true aim down sights (camera lines up with the weapon's own sight); per-team outfits from the Quantum pack and hiding the built-in holster pistol | Planned |
+| Later | Menu-style HUD and main menu, basement, second map, more operators, online multiplayer | Planned |
 
 ---
 
