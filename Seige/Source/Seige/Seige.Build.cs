@@ -19,6 +19,7 @@ public class Seige : ModuleRules
 			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
+			"SlateCore",
 			"NavigationSystem",
 			"GameplayTasks"
 		});

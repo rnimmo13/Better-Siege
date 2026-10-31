@@ -82,6 +82,7 @@ public:
 
 protected:
 
+	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
 
 	/** Creates the runtime input actions and mapping context if needed */

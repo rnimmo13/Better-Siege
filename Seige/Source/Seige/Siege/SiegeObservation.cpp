@@ -4,6 +4,7 @@
 #include "SiegeOperator.h"
 #include "SiegeGameMode.h"
 #include "SiegePlayerController.h"
+#include "SiegeUserSettings.h"
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -280,7 +281,7 @@ void ASiegeDrone::OnMove(const FInputActionValue& Value)
 
 void ASiegeDrone::OnLook(const FInputActionValue& Value)
 {
-	const FVector2D Axis = Value.Get<FVector2D>();
+	const FVector2D Axis = USiegeUserSettings::ScaleLook(Value.Get<FVector2D>());
 	AddControllerYawInput(Axis.X);
 	AddControllerPitchInput(Axis.Y);
 }
@@ -478,7 +479,7 @@ void ASiegeSecurityCamera::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 
 void ASiegeSecurityCamera::OnLook(const FInputActionValue& Value)
 {
-	const FVector2D Axis = Value.Get<FVector2D>();
+	const FVector2D Axis = USiegeUserSettings::ScaleLook(Value.Get<FVector2D>());
 	AddControllerYawInput(Axis.X);
 	AddControllerPitchInput(Axis.Y);
 }

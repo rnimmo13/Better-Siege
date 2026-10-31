@@ -37,6 +37,18 @@ ASiegePlayerController::ASiegePlayerController()
 	}
 }
 
+void ASiegePlayerController::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// coming from the front end menu the viewport is still in UI mode with a cursor
+	if (IsLocalPlayerController())
+	{
+		bShowMouseCursor = false;
+		SetInputMode(FInputModeGameOnly());
+	}
+}
+
 void ASiegePlayerController::EnsureSiegeInput()
 {
 	if (SiegeContext)

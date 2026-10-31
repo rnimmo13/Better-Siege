@@ -9,6 +9,7 @@
 #include "SiegeWall.h"
 #include "SiegeGun.h"
 #include "SiegeObservation.h"
+#include "SiegeUserSettings.h"
 #include "NavigationSystem.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Engine/World.h"
@@ -192,8 +193,8 @@ void ASiegeBotController::Tick(float DeltaSeconds)
 			{
 				Target = Visible;
 				TargetAcquiredTime = Now;
-				ReactionDelay = FMath::FRandRange(MinReactionTime, MaxReactionTime);
-				bAimForHead = FMath::FRand() < HeadshotChance;
+				ReactionDelay = FMath::FRandRange(MinReactionTime, MaxReactionTime) * GetDifficultyScale();
+				bAimForHead = FMath::FRand() < HeadshotChance / FMath::Square(GetDifficultyScale());
 				AimErrorDirection = FMath::VRand();
 			}
 
@@ -386,7 +387,7 @@ void ASiegeBotController::UpdateCombat(ASiegeOperator* Op, float Now)
 
 	// aim error shrinks as the bot settles onto the target
 	const float Settle = FMath::Clamp((Now - TargetAcquiredTime) / AimSettleTime, 0.0f, 1.0f);
-	const float ErrorRadius = FMath::Lerp(InitialAimError, SettledAimError, Settle);
+	const float ErrorRadius = FMath::Lerp(InitialAimError, SettledAimError, Settle) * GetDifficultyScale();
 	// devices are small, so aim error is scaled down for them
 	const float ErrorScale = EnemyOperator ? 1.0f : 0.25f;
 	const FVector AimPoint = GetAimPoint(Enemy) + AimErrorDirection * ErrorRadius * ErrorScale;
@@ -951,4 +952,16 @@ void ASiegeBotController::OnHeardNoise(const FVector& Location, float Loudness, 
 
 	LastHeardLocation = Location;
 	LastHeardTime = GetWorld()->GetTimeSeconds();
+}
+
+float ASiegeBotController::GetDifficultyScale()
+{
+	const USiegeUserSettings* Settings = USiegeUserSettings::Get();
+
+	switch (Settings ? Settings->BotDifficulty : ESiegeBotDifficulty::Regular)
+	{
+	case ESiegeBotDifficulty::Recruit:	return 1.5f;
+	case ESiegeBotDifficulty::Veteran:	return 0.7f;
+	default:							return 1.0f;
+	}
 }

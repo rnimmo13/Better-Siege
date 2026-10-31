@@ -124,6 +124,9 @@ protected:
 
 	virtual void OnPossess(APawn* InPawn) override;
 
+	/** Multiplier on reaction time and aim error from the player's bot difficulty setting (higher is easier) */
+	static float GetDifficultyScale();
+
 	ASiegeOperator* GetOperator() const;
 	ASiegeGameMode* GetSiegeGameMode() const;
 

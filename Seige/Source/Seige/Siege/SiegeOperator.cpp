@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SiegeOperator.h"
+#include "SiegeUserSettings.h"
 #include "SiegeSound.h"
 #include "SiegeRope.h"
 #include "SiegeGun.h"
@@ -131,6 +132,11 @@ void ASiegeOperator::BeginPlay()
 	FirstPersonMeshBaseLocation = GetFirstPersonMesh()->GetRelativeLocation();
 	CameraBaseRelativeLocation = GetFirstPersonCameraComponent()->GetRelativeLocation();
 	BaseFieldOfView = GetFirstPersonCameraComponent()->FieldOfView;
+	if (const USiegeUserSettings* Settings = USiegeUserSettings::Get())
+	{
+		BaseFieldOfView = FMath::Clamp(Settings->FieldOfView, 60.0f, 120.0f);
+		GetFirstPersonCameraComponent()->SetFieldOfView(BaseFieldOfView);
+	}
 	BaseFirstPersonFieldOfView = GetFirstPersonCameraComponent()->FirstPersonFieldOfView;
 
 	// bullets trace against the body mesh so we can detect headshots; the capsule lets them through
@@ -432,9 +438,22 @@ void ASiegeOperator::UpdateFootsteps(float DeltaSeconds)
 
 void ASiegeOperator::DoAim(float Yaw, float Pitch)
 {
-	// slower look while zoomed in
-	const float Scale = FMath::Lerp(1.0f, AimLookSensitivity, AimAlpha);
-	Super::DoAim(Yaw * Scale, Pitch * Scale);
+	// player sensitivity and invert, then slower look while zoomed in
+	float AimSens = AimLookSensitivity;
+	FVector2D Look(Yaw, Pitch);
+
+	if (IsPlayerControlled())
+	{
+		Look = USiegeUserSettings::ScaleLook(Look);
+
+		if (const USiegeUserSettings* Settings = USiegeUserSettings::Get())
+		{
+			AimSens = Settings->AimSensitivity;
+		}
+	}
+
+	const float Scale = FMath::Lerp(1.0f, AimSens, AimAlpha);
+	Super::DoAim(Look.X * Scale, Look.Y * Scale);
 }
 
 void ASiegeOperator::AddWeaponRecoil(float Recoil)
