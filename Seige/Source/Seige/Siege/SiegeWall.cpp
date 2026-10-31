@@ -51,6 +51,13 @@ void ASiegeWall::InitWall(ESiegeWallKind InKind, float InWidth, float InHeight, 
 		CellHealth = 60.0f;
 		Cells->SetCanEverAffectNavigation(false);
 	}
+	else if (Kind == ESiegeWallKind::Hatch)
+	{
+		// a couple of melee hits or a short burst opens it
+		CellSize = 25.0f;
+		CellHealth = 40.0f;
+		bReinforceable = bInReinforceable;
+	}
 
 	NumCols = FMath::Max(1, FMath::RoundToInt(Width / CellSize));
 	NumRows = FMath::Max(1, FMath::RoundToInt(Height / CellSize));
@@ -106,13 +113,13 @@ void ASiegeWall::UpdateMaterial()
 {
 	UMaterialInterface* Mat = SoftMaterial;
 
-	if (Kind == ESiegeWallKind::Barricade)
-	{
-		Mat = BarricadeMaterial;
-	}
-	else if (bReinforced)
+	if (bReinforced)
 	{
 		Mat = ReinforcedMaterial;
+	}
+	else if (Kind == ESiegeWallKind::Barricade || Kind == ESiegeWallKind::Hatch)
+	{
+		Mat = BarricadeMaterial;
 	}
 
 	if (Mat)
@@ -260,6 +267,35 @@ bool ASiegeWall::CutDroneHoleAt(const FVector& WorldLocation, float HoleWidth, f
 	return Cut > 0;
 }
 
+bool ASiegeWall::CutRectAt(const FVector& WorldCenter, float SizeAlongWidth, float SizeAlongHeight)
+{
+	const FVector Local = GetActorTransform().InverseTransformPosition(WorldCenter);
+
+	if (FMath::Abs(Local.X) > Thickness * 2.0f)
+	{
+		return false;
+	}
+
+	int32 Cut = 0;
+	for (int32 i = 0; i < CellHP.Num(); ++i)
+	{
+		const FVector Center = GetCellLocalCenter(i);
+		if (CellHP[i] > 0.0f && FMath::Abs(Center.Y - Local.Y) < SizeAlongWidth * 0.5f && FMath::Abs(Center.Z - Local.Z) < SizeAlongHeight * 0.5f)
+		{
+			CellHP[i] = 0.0f;
+			++Cut;
+		}
+	}
+
+	if (Cut > 0)
+	{
+		PreCutCells += Cut;
+		RebuildInstances();
+	}
+
+	return Cut > 0;
+}
+
 bool ASiegeWall::CanBeReinforced() const
 {
 	// can't reinforce a panel that already has holes in it
@@ -305,5 +341,5 @@ float ASiegeWall::GetPenetrationFactor() const
 		return 0.0f;
 	}
 
-	return Kind == ESiegeWallKind::Barricade ? 0.9f : 0.6f;
+	return (Kind == ESiegeWallKind::Barricade || Kind == ESiegeWallKind::Hatch) ? 0.9f : 0.6f;
 }

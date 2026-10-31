@@ -18,7 +18,9 @@ enum class ESiegeWallKind : uint8
 	/** Thin wooden door or window barricade. Breaks quickly, cannot be reinforced */
 	Barricade,
 	/** Destructible floor or ceiling panel */
-	Floor
+	Floor,
+	/** Weak floor cover that can be smashed open to drop through, or reinforced by defenders */
+	Hatch
 };
 
 /**
@@ -110,6 +112,14 @@ public:
 	 *  Only drones fit through. Returns true if a hole was cut.
 	 */
 	bool CutDroneHoleAt(const FVector& WorldLocation, float HoleWidth = 50.0f, float HoleHeight = 50.0f);
+
+	/** Removes every cell whose center lies in a rectangle (panel width x height axes) around the world location */
+	bool CutRectAt(const FVector& WorldCenter, float SizeAlongWidth, float SizeAlongHeight);
+
+	bool IsHatch() const { return Kind == ESiegeWallKind::Hatch; }
+
+	/** True for floor and hatch panels */
+	bool IsHorizontal() const { return Kind == ESiegeWallKind::Floor || Kind == ESiegeWallKind::Hatch; }
 
 	/** Reinforces this panel. Returns false if it can't be reinforced */
 	bool Reinforce();

@@ -102,6 +102,9 @@ protected:
 	/** Site index (0 = A, 1 = B) attacker bots push this round */
 	int32 BotAttackSite = 0;
 
+	/** Breaching gadgets whose bot breacher job is taken this round */
+	TSet<uint8> ClaimedBreachRoles;
+
 public:
 
 	int32 GetBotAttackSite() const { return BotAttackSite; }
@@ -147,6 +150,13 @@ public:
 	void CompleteDisable(ASiegeOperator* Defuser);
 	void OnDeviceDetonated(ASiegeDevice* Device);
 	void OnOperatorKilled(ASiegeOperator* Victim, AController* Killer, bool bHeadshot);
+	void OnOperatorDowned(ASiegeOperator* Victim, AController* Downer);
+
+	/** An operator can only go down (instead of dying) while a teammate is still standing to revive them */
+	bool CanOperatorGoDown(const ASiegeOperator* Victim) const;
+
+	/** Lets one attacker bot per breaching gadget take the breacher job this round */
+	bool TryClaimBreachRole(ESiegeGadget Gadget);
 
 	void PostTeamMessage(uint8 Team, const FString& Text);
 	void PostPlayerMessage(ASiegeOperator* Operator, const FString& Text);

@@ -20,7 +20,8 @@ enum class ESiegeInteraction : uint8
 	None,
 	PlantDevice,
 	DisableDevice,
-	Reinforce
+	Reinforce,
+	Revive
 };
 
 /**
@@ -73,6 +74,24 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Siege|Interaction", meta=(Units="s"))
 	float ReinforceTime = 1.5f;
 
+	UPROPERTY(EditAnywhere, Category="Siege|Interaction", meta=(Units="s"))
+	float ReviveTime = 4.0f;
+
+	/** Health a downed operator starts with; it bleeds away over time */
+	UPROPERTY(EditAnywhere, Category="Siege|Downed")
+	float DownedHealth = 25.0f;
+
+	/** Health lost per second while downed */
+	UPROPERTY(EditAnywhere, Category="Siege|Downed")
+	float DownedBleedRate = 1.25f;
+
+	/** Health after being revived */
+	UPROPERTY(EditAnywhere, Category="Siege|Downed")
+	float ReviveHealth = 20.0f;
+
+	UPROPERTY(EditAnywhere, Category="Siege|Downed", meta=(Units="cm/s"))
+	float CrawlSpeed = 70.0f;
+
 	UPROPERTY(EditAnywhere, Category="Siege|Interaction", meta=(Units="cm"))
 	float InteractRange = 200.0f;
 
@@ -118,6 +137,11 @@ protected:
 	ESiegeInteraction CurrentInteraction = ESiegeInteraction::None;
 	float InteractProgress = 0.0f;
 	TWeakObjectPtr<ASiegeWall> InteractWall;
+	TWeakObjectPtr<ASiegeOperator> ReviveTarget;
+
+	/** Down-but-not-out state */
+	bool bDowned = false;
+	TWeakObjectPtr<AController> DownedBy;
 
 	float LastMeleeTime = -100.0f;
 	float LastHitConfirmTime = -100.0f;
@@ -213,6 +237,19 @@ public:
 	float GetCurrentLean() const { return CurrentLean; }
 	bool IsSprinting() const;
 	bool IsInteracting() const { return bInteractHeld && CurrentInteraction != ESiegeInteraction::None; }
+	bool IsDowned() const { return bDowned; }
+
+	/** Returns the closest downed teammate within reach, if any */
+	ASiegeOperator* FindDownedTeammate(float Range) const;
+
+	/** Seconds until a downed operator bleeds out */
+	float GetBleedOutTime() const { return bDowned ? GetHealth() / FMath::Max(0.01f, DownedBleedRate) : 0.0f; }
+
+	/** Brings a downed operator back up. Called by the reviving teammate */
+	void Revive(ASiegeOperator* Reviver);
+
+	/** Operator being revived by the current interaction, if any */
+	ASiegeOperator* GetReviveTarget() const { return ReviveTarget.Get(); }
 	ESiegeInteraction GetCurrentInteraction() const { return CurrentInteraction; }
 	float GetInteractProgress01() const;
 	float GetLastHitConfirmTime() const { return LastHitConfirmTime; }
@@ -246,6 +283,13 @@ protected:
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 	virtual void Die() override;
+
+	/** Kills the operator and reports it to the game mode */
+	void FinishDeath(AController* Killer, bool bHeadshot);
+
+	/** Goes down but not out */
+	void EnterDowned(AController* Downer);
+
 
 	void UseGadget(ESiegeGadget Gadget, int32& Count);
 

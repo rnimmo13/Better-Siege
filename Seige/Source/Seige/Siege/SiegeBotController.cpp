@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SiegeBotController.h"
+#include "Seige.h"
 #include "SiegeOperator.h"
 #include "SiegeGameMode.h"
 #include "SiegeGameState.h"
@@ -63,8 +64,9 @@ void ASiegeBotController::UpdateControlRotation(float DeltaTime, bool bUpdatePaw
 		Desired.Pitch = 0.0f;
 	}
 
-	// level out when just walking somewhere
-	if (!Target.IsValid() && GetWorld()->GetTimeSeconds() - LastEnemySeenTime > 3.0f)
+	// level out when just walking somewhere (but keep pitch for deliberate aim points like placing a charge)
+	const bool bHasGameplayFocus = FAISystem::IsValidLocation(GetFocalPointForPriority(EAIFocusPriority::Gameplay));
+	if (!bHasGameplayFocus && !Target.IsValid() && GetWorld()->GetTimeSeconds() - LastEnemySeenTime > 3.0f)
 	{
 		Desired.Pitch = 0.0f;
 	}
@@ -92,8 +94,22 @@ void ASiegeBotController::PlanRound(ASiegeGameMode* GM, ASiegeOperator* Op)
 	bReachedEntry = false;
 	bRoamer = false;
 
+	BreachGadget = ESiegeGadget::None;
+	BreachStep = EBreachStep::None;
+	BreachWall.Reset();
+	LastBreachTick = -1.0f;
+
 	if (GM->IsAttackingTeam(Op->GetTeam()))
 	{
+		// one Torch and one Ram per round take the breacher job
+		const ESiegeGadget Unique = Op->GetOperatorDef().UniqueGadget;
+		if (GM->TryClaimBreachRole(Unique))
+		{
+			BreachGadget = Unique;
+			BreachStep = EBreachStep::MoveToWall;
+			UE_LOG(LogSeige, Log, TEXT("Breacher role: %s with %s"), *Op->GetDisplayName(), *SiegeGadgets::GetName(Unique));
+		}
+
 		if (Layout.EntryPoints.Num() > 0)
 		{
 			// prefer entries on the side of the target site
@@ -147,6 +163,16 @@ void ASiegeBotController::Tick(float DeltaSeconds)
 		PlanRound(GM, Op);
 	}
 
+	// downed bots can only wait for help
+	if (Op->IsDowned())
+	{
+		StopFire(Op);
+		StopMovement();
+		ClearFocus(EAIFocusPriority::Gameplay);
+		Target.Reset();
+		return;
+	}
+
 	if (Phase == ESiegePhase::RoundOver || Phase == ESiegePhase::MatchOver || Phase == ESiegePhase::OperatorSelect)
 	{
 		StopFire(Op);
@@ -173,6 +199,12 @@ void ASiegeBotController::Tick(float DeltaSeconds)
 
 			LastKnownEnemyLocation = Visible->GetActorLocation();
 			LastEnemySeenTime = Now;
+
+			const ASiegeOperator* VisibleOp = Cast<ASiegeOperator>(Visible);
+			if (VisibleOp && !VisibleOp->IsDowned())
+			{
+				LastStandingEnemySeenTime = Now;
+			}
 		}
 		else
 		{
@@ -202,6 +234,10 @@ AActor* ASiegeBotController::FindVisibleEnemy(ASiegeOperator* Op) const
 	ASiegeOperator* Best = nullptr;
 	float BestDist = SightRange;
 
+	// downed enemies are only finished off when nobody standing is in sight
+	ASiegeOperator* BestDowned = nullptr;
+	float BestDownedDist = SightRange;
+
 	for (ASiegeOperator* Enemy : GM->GetRoundOperators())
 	{
 		if (!IsValid(Enemy) || Enemy->IsDead() || Enemy->GetTeam() == Op->GetTeam())
@@ -212,7 +248,7 @@ AActor* ASiegeBotController::FindVisibleEnemy(ASiegeOperator* Op) const
 		const FVector ToEnemy = Enemy->GetActorLocation() - Eye;
 		const float Dist = ToEnemy.Size();
 
-		if (Dist > BestDist)
+		if (Dist > (Enemy->IsDowned() ? BestDownedDist : BestDist))
 		{
 			continue;
 		}
@@ -226,13 +262,32 @@ AActor* ASiegeBotController::FindVisibleEnemy(ASiegeOperator* Op) const
 
 		if (HasLineOfSight(Op, Enemy, Enemy->GetHeadLocation()) || HasLineOfSight(Op, Enemy, Enemy->GetChestLocation()))
 		{
-			Best = Enemy;
-			BestDist = Dist;
+			if (Enemy->IsDowned())
+			{
+				BestDowned = Enemy;
+				BestDownedDist = Dist;
+			}
+			else
+			{
+				Best = Enemy;
+				BestDist = Dist;
+			}
 		}
 	}
 
+	if (Best)
+	{
+		return Best;
+	}
+
+	// only bother finishing a downed enemy once things have been quiet for a few seconds
+	if (BestDowned && GetWorld()->GetTimeSeconds() - LastStandingEnemySeenTime > 4.0f)
+	{
+		return BestDowned;
+	}
+
 	// no operators in sight: shoot out enemy drones and cameras
-	return Best ? static_cast<AActor*>(Best) : FindVisibleDevice(Op);
+	return FindVisibleDevice(Op);
 }
 
 AActor* ASiegeBotController::FindVisibleDevice(ASiegeOperator* Op) const
@@ -288,12 +343,23 @@ void ASiegeBotController::UpdateCombat(ASiegeOperator* Op, float Now)
 	const ASiegeOperator* EnemyOperator = Cast<ASiegeOperator>(Enemy);
 	const ISiegeObserverDevice* EnemyDevice = Cast<ISiegeObserverDevice>(Enemy);
 
+	// stop shooting someone the moment they go down; finishing them is a separate, later decision
+	if (EnemyOperator && EnemyOperator->IsDowned() && Now - LastStandingEnemySeenTime < 4.0f)
+	{
+		Target.Reset();
+		Enemy = nullptr;
+	}
+
 	if (!Enemy || (EnemyOperator && EnemyOperator->IsDead()) || (EnemyDevice && !EnemyDevice->IsDeviceAlive()))
 	{
 		StopFire(Op);
 
-		// keep watching where we last saw someone for a few seconds
-		if (Now - LastEnemySeenTime < 3.0f)
+		// keep watching where we last saw someone for a few seconds (unless lining up a breach charge)
+		if (BreachStep == EBreachStep::Aim)
+		{
+			// the breach routine owns the aim point
+		}
+		else if (Now - LastEnemySeenTime < 3.0f)
 		{
 			SetFocalPoint(LastKnownEnemyLocation + FVector(0, 0, 60.0f), EAIFocusPriority::Gameplay);
 		}
@@ -423,6 +489,12 @@ void ASiegeBotController::UpdateObjective(ASiegeGameMode* GM, ASiegeOperator* Op
 
 	ASiegeDevice* Device = GM->GetActiveDevice();
 
+	// pick up downed teammates, unless we're a defender who needs to get to the device
+	if (!(Device && !bAttacker) && UpdateRevive(Op, Now))
+	{
+		return;
+	}
+
 	if (bAttacker)
 	{
 		if (Device)
@@ -459,6 +531,12 @@ void ASiegeBotController::UpdateObjective(ASiegeGameMode* GM, ASiegeOperator* Op
 				MoveTowards(EntryPoint, 150.0f);
 				return;
 			}
+		}
+
+		// breachers open a site wall before the push
+		if (UpdateBreach(GM, Op, Now))
+		{
+			return;
 		}
 
 		// intel operators scan as they close in
@@ -583,5 +661,267 @@ void ASiegeBotController::HandleStuck(ASiegeOperator* Op, float Now)
 		LastProgressTime = Now;
 		bHasMoveGoal = false;
 		StopMovement();
+	}
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Reviving
+
+bool ASiegeBotController::UpdateRevive(ASiegeOperator* Op, float Now)
+{
+	// keep going if we're already mid-revive
+	if (Op->IsInteracting() && Op->GetCurrentInteraction() == ESiegeInteraction::Revive)
+	{
+		StopMovement();
+		return true;
+	}
+
+	// don't walk into a fight to do it
+	if (Now - LastEnemySeenTime < 1.5f)
+	{
+		return false;
+	}
+
+	ASiegeOperator* Downed = Op->FindDownedTeammate(1500.0f);
+	if (!Downed)
+	{
+		return false;
+	}
+
+	if (FVector::Dist(Op->GetActorLocation(), Downed->GetActorLocation()) < 120.0f)
+	{
+		StopMovement();
+		Op->StartInteract();
+	}
+	else
+	{
+		MoveTowards(Downed->GetActorLocation(), 60.0f);
+	}
+
+	return true;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Breaching
+
+bool ASiegeBotController::PickBreachWall(ASiegeGameMode* GM, ASiegeOperator* Op)
+{
+	const FSiegeLayoutResult& Layout = GM->GetLayout();
+	const int32 SiteIndex = GM->GetBotAttackSite();
+	if (!Layout.Sites.IsValidIndex(SiteIndex) || !Layout.Sites[SiteIndex].IsValid())
+	{
+		return false;
+	}
+
+	const ASiegeBombSite* Site = Layout.Sites[SiteIndex].Get();
+	const FVector SiteCenter = Site->GetActorLocation();
+	const bool bHard = BreachGadget == ESiegeGadget::ThermalCharge;
+
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+
+	ASiegeWall* BestWall = nullptr;
+	FVector BestStand = FVector::ZeroVector;
+	FVector BestOutward = FVector::ZeroVector;
+	float BestScore = TNumericLimits<float>::Max();
+
+	for (const TWeakObjectPtr<ASiegeWall>& WallPtr : Layout.SiteWalls)
+	{
+		ASiegeWall* Wall = WallPtr.Get();
+		if (!Wall || Wall->IsHorizontal() || Wall->IsBarricade() || Wall->IsElectrified() || Wall->GetIntegrity() < 0.9f)
+		{
+			continue;
+		}
+
+		// soft charges can't open reinforced walls
+		if (!bHard && Wall->IsReinforced())
+		{
+			continue;
+		}
+
+		if (FVector::Dist2D(Wall->GetActorLocation(), SiteCenter) > 900.0f)
+		{
+			continue;
+		}
+
+		// stand on the side of the panel facing away from the site
+		const FVector Normal = Wall->GetActorForwardVector().GetSafeNormal2D();
+		const FVector ToSite = (SiteCenter - Wall->GetActorLocation()).GetSafeNormal2D();
+		const FVector Outward = FVector::DotProduct(Normal, ToSite) > 0.0f ? -Normal : Normal;
+
+		FVector Stand = Wall->GetActorLocation() + Outward * 110.0f;
+		Stand.Z = Op->GetActorLocation().Z;
+
+		if (Site->IsInside(Stand))
+		{
+			continue;
+		}
+
+		if (NavSys)
+		{
+			FNavLocation Projected;
+			if (!NavSys->ProjectPointToNavigation(Stand, Projected, FVector(40.0f, 40.0f, 150.0f)))
+			{
+				continue;
+			}
+			Stand = Projected.Location;
+		}
+
+		// thermal charges are wasted on soft walls, so strongly prefer reinforced ones
+		const float Score = FVector::Dist(Op->GetActorLocation(), Stand) - ((bHard && Wall->IsReinforced()) ? 1500.0f : 0.0f);
+		if (Score < BestScore)
+		{
+			BestScore = Score;
+			BestWall = Wall;
+			BestStand = Stand;
+			BestOutward = Outward;
+		}
+	}
+
+	if (!BestWall)
+	{
+		return false;
+	}
+
+	BreachWall = BestWall;
+	BreachStand = BestStand;
+	BreachRetreat = BestStand + BestOutward * 300.0f;
+
+	if (NavSys)
+	{
+		FNavLocation Projected;
+		if (NavSys->ProjectPointToNavigation(BreachRetreat, Projected, FVector(150.0f, 150.0f, 150.0f)))
+		{
+			BreachRetreat = Projected.Location;
+		}
+	}
+
+	return true;
+}
+
+bool ASiegeBotController::UpdateBreach(ASiegeGameMode* GM, ASiegeOperator* Op, float Now)
+{
+	if (BreachGadget == ESiegeGadget::None || BreachStep == EBreachStep::None || BreachStep == EBreachStep::Done)
+	{
+		return false;
+	}
+
+	if (GM->GetPhase() != ESiegePhase::Action || (Op->GetUniqueGadgetCount() <= 0 && BreachStep != EBreachStep::Retreat))
+	{
+		BreachStep = EBreachStep::Done;
+		return false;
+	}
+
+	if (!BreachWall.IsValid())
+	{
+		const bool bPicked = PickBreachWall(GM, Op);
+		UE_LOG(LogSeige, Log, TEXT("Breacher %s (%s): %s"), *Op->GetDisplayName(), *SiegeGadgets::GetName(BreachGadget),
+			bPicked ? *FString::Printf(TEXT("targeting %s wall (reinforced %d)"), *BreachWall->GetRoomLabel(), BreachWall->IsReinforced()) : TEXT("no usable wall"));
+
+		if (!bPicked)
+		{
+			BreachStep = EBreachStep::Done;
+			return false;
+		}
+
+		BreachStep = EBreachStep::MoveToWall;
+		BreachStepTime = Now;
+	}
+
+	// time spent fighting or reviving elsewhere does not count against the breach
+	if (LastBreachTick > 0.0f && Now - LastBreachTick > 0.4f)
+	{
+		BreachStepTime += Now - LastBreachTick;
+	}
+	LastBreachTick = Now;
+
+	// give up if a step takes too long (blocked path...)
+	if (Now - BreachStepTime > (BreachStep == EBreachStep::MoveToWall ? 25.0f : 10.0f) && BreachStep != EBreachStep::Done)
+	{
+		UE_LOG(LogSeige, Log, TEXT("Breacher %s gave up at step %d"), *Op->GetDisplayName(), static_cast<int32>(BreachStep));
+		BreachStep = EBreachStep::Done;
+		ClearFocus(EAIFocusPriority::Gameplay);
+		return false;
+	}
+
+	ASiegeWall* Wall = BreachWall.Get();
+
+	switch (BreachStep)
+	{
+	case EBreachStep::MoveToWall:
+	{
+		// someone already opened it
+		if (Wall->GetIntegrity() < 0.5f)
+		{
+			BreachStep = EBreachStep::Done;
+			return false;
+		}
+
+		if (FVector::Dist2D(Op->GetActorLocation(), BreachStand) > 70.0f)
+		{
+			MoveTowards(BreachStand, 30.0f);
+			return true;
+		}
+
+		StopMovement();
+		BreachStep = EBreachStep::Aim;
+		BreachStepTime = Now;
+		return true;
+	}
+
+	case EBreachStep::Aim:
+	{
+		FVector AimPoint = Wall->GetActorLocation();
+		AimPoint.Z = Op->GetAimOrigin().Z - 15.0f;
+		SetFocalPoint(AimPoint, EAIFocusPriority::Gameplay);
+
+		const FVector ToAim = (AimPoint - Op->GetAimOrigin()).GetSafeNormal();
+		const bool bFacing = FVector::DotProduct(ToAim, GetControlRotation().Vector()) > 0.97f;
+
+		if (bFacing && Now - BreachStepTime > 0.5f)
+		{
+			const int32 Before = Op->GetUniqueGadgetCount();
+			Op->UseUniqueGadget();
+
+			if (Op->GetUniqueGadgetCount() < Before)
+			{
+				BreachStep = EBreachStep::Retreat;
+				BreachStepTime = Now;
+				ClearFocus(EAIFocusPriority::Gameplay);
+			}
+			else if (Now - BreachStepTime > 3.0f)
+			{
+				BreachStep = EBreachStep::Done;
+				ClearFocus(EAIFocusPriority::Gameplay);
+			}
+		}
+		return true;
+	}
+
+	case EBreachStep::Retreat:
+	{
+		MoveTowards(BreachRetreat, 40.0f);
+
+		if (BreachGadget == ESiegeGadget::BreachCharge)
+		{
+			// back off, then blow it
+			if (FVector::Dist2D(Op->GetActorLocation(), BreachRetreat) < 100.0f || Now - BreachStepTime > 2.5f)
+			{
+				if (Op->HasPlacedCharge())
+				{
+					Op->UseUniqueGadget();
+				}
+				BreachStep = EBreachStep::Done;
+			}
+		}
+		else if (Now - BreachStepTime > 5.0f)
+		{
+			// thermal charges burn through on their own
+			BreachStep = EBreachStep::Done;
+		}
+		return true;
+	}
+
+	default:
+		return false;
 	}
 }

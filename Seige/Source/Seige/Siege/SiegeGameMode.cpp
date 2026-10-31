@@ -242,7 +242,7 @@ int32 ASiegeGameMode::CountAlive(uint8 Team) const
 	int32 Count = 0;
 	for (const ASiegeOperator* Op : RoundOperators)
 	{
-		if (IsValid(Op) && !Op->IsDead() && Op->GetTeam() == Team)
+		if (IsValid(Op) && !Op->IsDead() && !Op->IsDowned() && Op->GetTeam() == Team)
 		{
 			++Count;
 		}
@@ -378,6 +378,7 @@ void ASiegeGameMode::StartNewRound()
 
 	SiegeLayout::BuildEmbassy(GetWorld(), Layout);
 	BotAttackSite = FMath::RandRange(0, FMath::Max(0, Layout.Sites.Num() - 1));
+	ClaimedBreachRoles.Reset();
 
 	// cameras belong to whoever defends this round
 	for (const TWeakObjectPtr<ASiegeSecurityCamera>& Cam : Layout.Cameras)
@@ -1050,4 +1051,68 @@ void ASiegeGameMode::LaunchBotDrones()
 		DroneAI->MoveToLocation(Site->GetRandomPoint(), 120.0f, true, true, true, false, nullptr, true);
 		DroneControllers.Add(DroneAI);
 	}
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Downed and breach roles
+
+bool ASiegeGameMode::CanOperatorGoDown(const ASiegeOperator* Victim) const
+{
+	if (!Victim)
+	{
+		return false;
+	}
+
+	for (const ASiegeOperator* Op : RoundOperators)
+	{
+		if (IsValid(Op) && Op != Victim && Op->GetTeam() == Victim->GetTeam() && !Op->IsDead() && !Op->IsDowned())
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void ASiegeGameMode::OnOperatorDowned(ASiegeOperator* Victim, AController* Downer)
+{
+	if (!Victim)
+	{
+		return;
+	}
+
+	if (ASiegeGameState* GS = GetSiegeGameState())
+	{
+		FSiegeKillFeedEntry Entry;
+		Entry.KillerName = GetDisplayNameFor(Downer);
+		Entry.VictimName = Victim->GetDisplayName();
+		Entry.KillerTeam = GetTeamOf(Downer);
+		Entry.VictimTeam = Victim->GetTeam();
+		Entry.bDowned = true;
+		Entry.Time = GS->GetServerWorldTimeSeconds();
+		GS->AddKill(Entry);
+
+		UE_LOG(LogSeige, Log, TEXT("Downed: %s -> %s"), *Entry.KillerName, *Entry.VictimName);
+	}
+
+	PostTeamMessage(Victim->GetTeam(), FString::Printf(TEXT("%s is down! Revive them [F]"), *Victim->GetDisplayName()));
+
+	CheckEliminations();
+}
+
+bool ASiegeGameMode::TryClaimBreachRole(ESiegeGadget Gadget)
+{
+	if (Gadget != ESiegeGadget::ThermalCharge && Gadget != ESiegeGadget::BreachCharge)
+	{
+		return false;
+	}
+
+	const uint8 Key = static_cast<uint8>(Gadget);
+	if (ClaimedBreachRoles.Contains(Key))
+	{
+		return false;
+	}
+
+	ClaimedBreachRoles.Add(Key);
+	return true;
 }

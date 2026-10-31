@@ -109,6 +109,10 @@ struct FSiegeKillFeedEntry
 	UPROPERTY(BlueprintReadOnly, Category="KillFeed")
 	bool bHeadshot = false;
 
+	/** The victim was downed rather than killed */
+	UPROPERTY(BlueprintReadOnly, Category="KillFeed")
+	bool bDowned = false;
+
 	UPROPERTY(BlueprintReadOnly, Category="KillFeed")
 	float Time = 0.0f;
 };

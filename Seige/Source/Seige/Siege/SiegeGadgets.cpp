@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SiegeGadgets.h"
+#include "Seige.h"
 #include "SiegeWall.h"
 #include "SiegeOperator.h"
 #include "SiegeGameMode.h"
@@ -264,6 +265,9 @@ void ASiegeBreachCharge::Detonate()
 	}
 
 	bExploded = true;
+
+	UE_LOG(LogSeige, Log, TEXT("Breach: %s detonated a %s charge on %s (reinforced: %d)"), OwnerOperator.IsValid() ? *OwnerOperator->GetDisplayName() : TEXT("?"),
+		bHardBreach ? TEXT("thermal") : TEXT("breach"), AttachedWall.IsValid() ? *AttachedWall->GetRoomLabel() : TEXT("floor/unknown"), AttachedWall.IsValid() ? AttachedWall->IsReinforced() : 0);
 
 	AController* InstigatorController = OwnerOperator.IsValid() ? OwnerOperator->GetOwningController() : nullptr;
 

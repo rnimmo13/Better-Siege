@@ -162,6 +162,31 @@ namespace SiegeLayout
 					Panel(Center, Rotation, ESiegeWallKind::Floor, SizeY, SizeX, WallThickness, false, Label, false);
 				}
 			}
+
+			// indestructible joists under the panel seams: a blown-open floor leaves narrow shooting lanes
+			for (int32 X = 1; X < CountX; ++X)
+			{
+				const float BeamX = MinX + SizeX * X;
+				Block(FVector(BeamX, (MinY + MaxY) * 0.5f, TopZ - WallThickness - 12.0f), FVector(20.0f, MaxY - MinY, 24.0f));
+			}
+		}
+
+		/** Replaces a square of floor with a weak hatch cover centered on X/Y */
+		void Hatch(float X, float Y, float TopZ, const FString& Label, bool bSiteHatch)
+		{
+			const float Size = 100.0f;
+			const FVector Center(X, Y, TopZ - WallThickness * 0.5f);
+
+			for (const TWeakObjectPtr<AActor>& Actor : Out->Actors)
+			{
+				ASiegeWall* Wall = Cast<ASiegeWall>(Actor.Get());
+				if (Wall && Wall->GetKind() == ESiegeWallKind::Floor && FVector::Dist2D(Wall->GetActorLocation(), Center) < 260.0f)
+				{
+					Wall->CutRectAt(Center, Size, Size);
+				}
+			}
+
+			Panel(Center, FRotator(90.0f, 0.0f, 0.0f), ESiegeWallKind::Hatch, Size, Size, 12.0f, true, Label, bSiteHatch);
 		}
 
 		/** Cuts a drone hole in whichever destructible panel stands at this floor point */
@@ -341,18 +366,44 @@ namespace SiegeLayout
 		B.WallRun(FVector2D(-500, -1000), FVector2D(-500, -150), 0.0f, H, true, false, { Door(425.0f) }, TEXT("Kitchen"));
 		B.WallRun(FVector2D(500, -1000), FVector2D(500, -150), 0.0f, H, false, false, {}, TEXT("Storage"));
 
-		// ----- upstairs office above site A -----
-
-		B.Floor(-1500.0f, -500.0f, 150.0f, 1000.0f, UpperFloorZ, 4, 4, TEXT("A Office Ceiling"));
+		// ----- second floor over the north wing (above site A, the lounge and site B) -----
 
 		const float UZ = UpperFloorZ;
-		B.WallRun(FVector2D(-1500, 150), FVector2D(-500, 150), UZ, H, false, false, {}, TEXT("Upstairs"));
-		B.WallRun(FVector2D(-1500, 1000), FVector2D(-500, 1000), UZ, H, true, false, { Window(500.0f) }, TEXT("Upstairs"));
-		B.WallRun(FVector2D(-1500, 150), FVector2D(-1500, 1000), UZ, H, false, false, { Door(550.0f, 140.0f) }, TEXT("Upstairs"));
-		B.WallRun(FVector2D(-500, 150), FVector2D(-500, 1000), UZ, H, true, false, { Window(425.0f, 160.0f) }, TEXT("Upstairs"));
+
+		// destructible floors with structural beams left underneath when they're blown open
+		B.Floor(-1500.0f, -500.0f, 150.0f, 1000.0f, UZ, 4, 4, TEXT("A Office Ceiling"));
+		B.Floor(-500.0f, 500.0f, 150.0f, 1000.0f, UZ, 4, 4, TEXT("Lounge Ceiling"));
+		B.Floor(500.0f, 1500.0f, 150.0f, 1000.0f, UZ, 4, 4, TEXT("B Server Ceiling"));
+
+		// hatches: smash open to drop down, or reinforce to keep closed
+		B.Hatch(-1125.0f, 400.0f, UZ, TEXT("A Hatch"), true);
+		B.Hatch(1125.0f, 800.0f, UZ, TEXT("B Hatch"), true);
+		B.Hatch(125.0f, 500.0f, UZ, TEXT("Lounge Hatch"), false);
+
+		// upstairs rooms: Upstairs Office (above A), Library (above the lounge), Archive (above B)
+		B.WallRun(FVector2D(-1500, 150), FVector2D(1500, 150), UZ, H, true, false, { Window(500.0f), Door(1270.0f, 120.0f), Window(2500.0f) }, TEXT("Upstairs Hall Side"));
+		B.WallRun(FVector2D(-1500, 1000), FVector2D(1500, 1000), UZ, H, true, false, { Window(500.0f), Window(1500.0f), Window(2500.0f) }, TEXT("Upstairs North"));
+		B.WallRun(FVector2D(-1500, 150), FVector2D(-1500, 1000), UZ, H, false, false, { Door(550.0f, 140.0f) }, TEXT("Upstairs Office"));
+		B.WallRun(FVector2D(1500, 150), FVector2D(1500, 1000), UZ, H, false, false, {}, TEXT("Archive"));
+		B.WallRun(FVector2D(-500, 150), FVector2D(-500, 1000), UZ, H, true, false, { Door(550.0f) }, TEXT("Library"));
+		B.WallRun(FVector2D(500, 150), FVector2D(500, 1000), UZ, H, true, false, { Door(550.0f) }, TEXT("Library"));
 
 		// roof
-		B.Block(FVector(-1000.0f, 575.0f, UZ + H + 10.0f), FVector(1040.0f, 890.0f, 20.0f));
+		B.Block(FVector(0.0f, 575.0f, UZ + H + 10.0f), FVector(3040.0f, 890.0f, 20.0f));
+
+		// interior staircase in the hallway up to the Library door (top at x=-300, z=320)
+		{
+			const float RunLength = 640.0f;
+			const float Rise = UZ;
+			const float Angle = FMath::RadiansToDegrees(FMath::Atan2(Rise, RunLength));
+			const float Slant = FMath::Sqrt(RunLength * RunLength + Rise * Rise);
+			const float StairY = 77.5f;
+
+			B.Block(FVector(-300.0f - RunLength * 0.5f, StairY, Rise * 0.5f - 10.0f), FVector(Slant, 125.0f, 20.0f), FRotator(Angle, 0.0f, 0.0f));
+
+			// landing in front of the Library door
+			B.Block(FVector(-230.0f, StairY, UZ - 10.0f), FVector(140.0f, 125.0f, 20.0f));
+		}
 
 		// exterior ramp up to the upstairs door (top at x=-1500, z=320)
 		{
@@ -392,10 +443,10 @@ namespace SiegeLayout
 		Out.DefenderSpawns.Add(FTransform(FaceSouth, FVector(800.0f, 450.0f, 100.0f)));
 		Out.DefenderSpawns.Add(FTransform(FaceSouth, FVector(1100.0f, 700.0f, 100.0f)));
 
-		Out.DefenderPostsA = { FVector(-1350.0f, 880.0f, 100.0f), FVector(-650.0f, 880.0f, 100.0f), FVector(-1350.0f, 300.0f, 100.0f), FVector(-650.0f, 320.0f, 100.0f), FVector(-200.0f, 850.0f, 100.0f) };
-		Out.DefenderPostsB = { FVector(1350.0f, 880.0f, 100.0f), FVector(650.0f, 880.0f, 100.0f), FVector(1350.0f, 300.0f, 100.0f), FVector(650.0f, 320.0f, 100.0f), FVector(200.0f, 850.0f, 100.0f) };
+		Out.DefenderPostsA = { FVector(-1350.0f, 880.0f, 100.0f), FVector(-650.0f, 880.0f, 100.0f), FVector(-1350.0f, 300.0f, 100.0f), FVector(-650.0f, 320.0f, 100.0f), FVector(-200.0f, 850.0f, 100.0f), FVector(-1000.0f, 750.0f, 420.0f) };
+		Out.DefenderPostsB = { FVector(1350.0f, 880.0f, 100.0f), FVector(650.0f, 880.0f, 100.0f), FVector(1350.0f, 300.0f, 100.0f), FVector(650.0f, 320.0f, 100.0f), FVector(200.0f, 850.0f, 100.0f), FVector(1000.0f, 400.0f, 420.0f) };
 
-		Out.RoamPoints = { FVector(-1200.0f, 0.0f, 100.0f), FVector(1200.0f, 0.0f, 100.0f), FVector(-1000.0f, -600.0f, 100.0f), FVector(1000.0f, -600.0f, 100.0f), FVector(0.0f, -600.0f, 100.0f), FVector(-1000.0f, 575.0f, 420.0f) };
+		Out.RoamPoints = { FVector(-1200.0f, 0.0f, 100.0f), FVector(1200.0f, 0.0f, 100.0f), FVector(-1000.0f, -600.0f, 100.0f), FVector(1000.0f, -600.0f, 100.0f), FVector(0.0f, -600.0f, 100.0f), FVector(-1000.0f, 575.0f, 420.0f), FVector(0.0f, 575.0f, 420.0f), FVector(1000.0f, 575.0f, 420.0f) };
 
 		Out.EntryPoints = { FVector(0.0f, -1300.0f, 100.0f), FVector(-1900.0f, 0.0f, 100.0f), FVector(1900.0f, 0.0f, 100.0f), FVector(-1000.0f, -1300.0f, 100.0f), FVector(1000.0f, -1300.0f, 100.0f) };
 

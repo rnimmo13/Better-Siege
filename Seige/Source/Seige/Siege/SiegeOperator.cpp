@@ -125,6 +125,30 @@ void ASiegeOperator::Tick(float DeltaSeconds)
 		return;
 	}
 
+	if (bDowned)
+	{
+		// bleed out unless a teammate gets here first
+		CurrentHP -= DownedBleedRate * DeltaSeconds;
+		OnDamaged.Broadcast(FMath::Max(0.0f, CurrentHP / MaxHP));
+
+		if (CurrentHP <= 0.0f)
+		{
+			CurrentHP = 0.0f;
+			FinishDeath(DownedBy.Get(), false);
+			return;
+		}
+
+		if (!bIsCrouched)
+		{
+			Crouch();
+		}
+
+		UpdateLean(DeltaSeconds);
+		UpdateAim(DeltaSeconds);
+		UpdateMovementSpeed();
+		return;
+	}
+
 	UpdateLean(DeltaSeconds);
 	UpdateAim(DeltaSeconds);
 	UpdateMovementSpeed();
@@ -158,7 +182,7 @@ void ASiegeOperator::DoMove(float Right, float Forward)
 
 void ASiegeOperator::DoJumpStart()
 {
-	if (IsDead() || IsInteracting())
+	if (IsDead() || bDowned || IsInteracting())
 	{
 		return;
 	}
@@ -199,7 +223,7 @@ void ASiegeOperator::DoJumpEnd()
 
 void ASiegeOperator::ToggleCrouch()
 {
-	if (IsDead())
+	if (IsDead() || bDowned)
 	{
 		return;
 	}
@@ -217,9 +241,9 @@ void ASiegeOperator::ToggleCrouch()
 
 void ASiegeOperator::SetSprinting(bool bSprint)
 {
-	bSprintHeld = bSprint;
+	bSprintHeld = bSprint && !bDowned;
 
-	if (bSprint)
+	if (bSprintHeld)
 	{
 		if (bIsCrouched)
 		{
@@ -233,7 +257,7 @@ void ASiegeOperator::SetSprinting(bool bSprint)
 
 void ASiegeOperator::SetAiming(bool bAim)
 {
-	bAimHeld = bAim && !IsDead();
+	bAimHeld = bAim && !IsDead() && !bDowned;
 
 	// aiming and sprinting are mutually exclusive; the most recent input wins
 	if (bAimHeld)
@@ -276,7 +300,7 @@ void ASiegeOperator::UpdateMovementSpeed()
 	UCharacterMovementComponent* Move = GetCharacterMovement();
 	const float AimedWalk = Walk * FMath::Lerp(1.0f, AimSpeedMultiplier, AimAlpha);
 	Move->MaxWalkSpeed = (bSprintHeld && ForwardInput > 0.1f) ? Walk * SprintMultiplier : AimedWalk;
-	Move->MaxWalkSpeedCrouched = Walk * 0.5f;
+	Move->MaxWalkSpeedCrouched = bDowned ? CrawlSpeed : Walk * 0.5f;
 }
 
 void ASiegeOperator::SetLean(float Direction)
@@ -314,7 +338,7 @@ void ASiegeOperator::UpdateLean(float DeltaSeconds)
 
 bool ASiegeOperator::CanFireWeapon() const
 {
-	if (IsDead() || IsSprinting() || IsInteracting())
+	if (IsDead() || bDowned || IsSprinting() || IsInteracting())
 	{
 		return false;
 	}
@@ -422,29 +446,121 @@ float ASiegeOperator::TakeDamage(float Damage, FDamageEvent const& DamageEvent, 
 		}
 	}
 
-	CurrentHP -= Damage;
 	LastDamagedTime = GetWorld()->GetTimeSeconds();
 
+	// body shots that would kill leave you down but not out, as long as a teammate could still revive you.
+	// headshots, explosions and hits on someone already down kill outright
+	ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>();
+	const bool bWouldDie = CurrentHP - Damage <= 0.0f;
+
+	if (bWouldDie && !bDowned && !bHeadshot && Cast<ASiegeGun>(DamageCauser) && GM && GM->CanOperatorGoDown(this))
+	{
+		EnterDowned(EventInstigator);
+		return Damage;
+	}
+
+	CurrentHP -= Damage;
 	OnDamaged.Broadcast(FMath::Max(0.0f, CurrentHP / MaxHP));
 
 	if (CurrentHP <= 0.0f)
 	{
 		CurrentHP = 0.0f;
-
-		if (ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>())
-		{
-			KillerName = GM->GetDisplayNameFor(EventInstigator);
-		}
-
-		Die();
-
-		if (ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>())
-		{
-			GM->OnOperatorKilled(this, EventInstigator, bHeadshot);
-		}
+		FinishDeath(EventInstigator, bHeadshot);
 	}
 
 	return Damage;
+}
+
+void ASiegeOperator::FinishDeath(AController* Killer, bool bHeadshot)
+{
+	ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>();
+
+	if (GM)
+	{
+		KillerName = GM->GetDisplayNameFor(Killer);
+	}
+
+	bDowned = false;
+	Die();
+
+	if (GM)
+	{
+		GM->OnOperatorKilled(this, Killer, bHeadshot);
+	}
+}
+
+void ASiegeOperator::EnterDowned(AController* Downer)
+{
+	bDowned = true;
+	DownedBy = Downer;
+	CurrentHP = DownedHealth;
+
+	StopInteract();
+	DoStopFiring();
+	bAimHeld = false;
+	bSprintHeld = false;
+	SetLean(0.0f);
+
+	// can't fight while down
+	if (IsValid(CurrentWeapon))
+	{
+		CurrentWeapon->DeactivateWeapon();
+	}
+
+	Crouch();
+	OnDamaged.Broadcast(FMath::Max(0.0f, CurrentHP / MaxHP));
+
+	if (ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>())
+	{
+		GM->OnOperatorDowned(this, Downer);
+	}
+}
+
+void ASiegeOperator::Revive(ASiegeOperator* Reviver)
+{
+	if (!bDowned || IsDead())
+	{
+		return;
+	}
+
+	bDowned = false;
+	DownedBy.Reset();
+	CurrentHP = ReviveHealth;
+	OnDamaged.Broadcast(FMath::Max(0.0f, CurrentHP / MaxHP));
+
+	UnCrouch();
+
+	if (IsValid(CurrentWeapon))
+	{
+		CurrentWeapon->ActivateWeapon(PlayerTag);
+	}
+
+	if (ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>())
+	{
+		GM->PostTeamMessage(GetTeam(), FString::Printf(TEXT("%s revived %s"), Reviver ? *Reviver->GetDisplayName() : TEXT("Someone"), *DisplayName));
+	}
+}
+
+ASiegeOperator* ASiegeOperator::FindDownedTeammate(float Range) const
+{
+	ASiegeOperator* Best = nullptr;
+	float BestDist = Range;
+
+	for (TActorIterator<ASiegeOperator> It(GetWorld()); It; ++It)
+	{
+		ASiegeOperator* Other = *It;
+		if (Other != this && Other->GetTeam() == GetTeam() && Other->IsDowned() && !Other->IsDead())
+		{
+			const float Dist = FVector::Dist(Other->GetActorLocation(), GetActorLocation());
+			if (Dist < BestDist)
+			{
+				Best = Other;
+				BestDist = Dist;
+			}
+		}
+	}
+
+	return Best;
 }
 
 void ASiegeOperator::Die()
@@ -481,13 +597,22 @@ ESiegeInteraction ASiegeOperator::FindAvailableInteraction(ASiegeWall*& OutWall)
 	OutWall = nullptr;
 
 	const ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>();
-	if (!GM || IsDead())
+	if (!GM || IsDead() || bDowned)
 	{
 		return ESiegeInteraction::None;
 	}
 
 	const ESiegePhase Phase = GM->GetPhase();
 	const bool bAttacker = GM->IsAttackingTeam(GetTeam());
+
+	// disabling the device beats everything; reviving beats everything else
+	const ASiegeDevice* ActiveDevice = GM->GetActiveDevice();
+	const bool bCanDisable = !bAttacker && ActiveDevice && FVector::Dist(ActiveDevice->GetActorLocation(), GetActorLocation()) < InteractRange;
+
+	if (!bCanDisable && FindDownedTeammate(150.0f))
+	{
+		return ESiegeInteraction::Revive;
+	}
 
 	if (bAttacker)
 	{
@@ -528,13 +653,18 @@ FString ASiegeOperator::GetInteractPrompt() const
 	case ESiegeInteraction::PlantDevice:	return TEXT("Hold [F] to plant the device");
 	case ESiegeInteraction::DisableDevice:	return TEXT("Hold [F] to disable the device");
 	case ESiegeInteraction::Reinforce:		return FString::Printf(TEXT("Hold [F] to reinforce wall (%d left)"), ReinforcementsLeft);
+	case ESiegeInteraction::Revive:
+	{
+		const ASiegeOperator* Downed = FindDownedTeammate(150.0f);
+		return FString::Printf(TEXT("Hold [F] to revive %s"), Downed ? *Downed->GetDisplayName() : TEXT("teammate"));
+	}
 	default:								return FString();
 	}
 }
 
 void ASiegeOperator::StartInteract()
 {
-	if (IsDead())
+	if (IsDead() || bDowned)
 	{
 		return;
 	}
@@ -550,6 +680,7 @@ void ASiegeOperator::StopInteract()
 	CurrentInteraction = ESiegeInteraction::None;
 	InteractProgress = 0.0f;
 	InteractWall.Reset();
+	ReviveTarget.Reset();
 }
 
 float ASiegeOperator::GetInteractProgress01() const
@@ -561,6 +692,7 @@ float ASiegeOperator::GetInteractProgress01() const
 	case ESiegeInteraction::PlantDevice:	Duration = PlantTime; break;
 	case ESiegeInteraction::DisableDevice:	Duration = DisableTime; break;
 	case ESiegeInteraction::Reinforce:		Duration = ReinforceTime; break;
+	case ESiegeInteraction::Revive:			Duration = ReviveTime; break;
 	default:								return 0.0f;
 	}
 
@@ -576,12 +708,16 @@ void ASiegeOperator::UpdateInteraction(float DeltaSeconds)
 
 	ASiegeWall* Wall = nullptr;
 	const ESiegeInteraction Available = FindAvailableInteraction(Wall);
+	ASiegeOperator* Downed = Available == ESiegeInteraction::Revive ? FindDownedTeammate(150.0f) : nullptr;
 
 	// restart if what we're doing changed (walked off site, looked at a different wall...)
-	if (Available != CurrentInteraction || (Available == ESiegeInteraction::Reinforce && Wall != InteractWall.Get()))
+	if (Available != CurrentInteraction
+		|| (Available == ESiegeInteraction::Reinforce && Wall != InteractWall.Get())
+		|| (Available == ESiegeInteraction::Revive && Downed != ReviveTarget.Get()))
 	{
 		CurrentInteraction = Available;
 		InteractWall = Wall;
+		ReviveTarget = Downed;
 		InteractProgress = 0.0f;
 	}
 
@@ -605,6 +741,7 @@ void ASiegeOperator::UpdateInteraction(float DeltaSeconds)
 
 	ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>();
 	const ESiegeInteraction Completed = CurrentInteraction;
+	ASiegeOperator* RevivedTeammate = ReviveTarget.Get();
 
 	StopInteract();
 
@@ -627,6 +764,13 @@ void ASiegeOperator::UpdateInteraction(float DeltaSeconds)
 		if (Wall && Wall->Reinforce())
 		{
 			--ReinforcementsLeft;
+		}
+		break;
+
+	case ESiegeInteraction::Revive:
+		if (RevivedTeammate)
+		{
+			RevivedTeammate->Revive(this);
 		}
 		break;
 
@@ -685,7 +829,7 @@ void ASiegeOperator::UseSecondaryGadget()
 void ASiegeOperator::UseGadget(ESiegeGadget Gadget, int32& Count)
 {
 	ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>();
-	if (IsDead() || !GM || Gadget == ESiegeGadget::None)
+	if (IsDead() || bDowned || !GM || Gadget == ESiegeGadget::None)
 	{
 		return;
 	}
@@ -827,7 +971,7 @@ void ASiegeOperator::UseGadget(ESiegeGadget Gadget, int32& Count)
 void ASiegeOperator::Melee()
 {
 	const float Now = GetWorld()->GetTimeSeconds();
-	if (IsDead() || IsInteracting() || Now - LastMeleeTime < MeleeCooldown)
+	if (IsDead() || bDowned || IsInteracting() || Now - LastMeleeTime < MeleeCooldown)
 	{
 		return;
 	}
@@ -851,7 +995,7 @@ void ASiegeOperator::Melee()
 	if (ASiegeWall* Wall = Cast<ASiegeWall>(HitActor))
 	{
 		// melee smashes a chunk out of barricades and a small hole in soft walls
-		Wall->ApplyExplosion(Hit.ImpactPoint, Wall->IsBarricade() ? 55.0f : 20.0f, false);
+		Wall->ApplyExplosion(Hit.ImpactPoint, (Wall->IsBarricade() || Wall->IsHatch()) ? 55.0f : 20.0f, false);
 	}
 	else if (HitActor)
 	{

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AIController.h"
+#include "SiegeTypes.h"
 #include "SiegeBotController.generated.h"
 
 class ASiegeOperator;
@@ -61,6 +62,9 @@ protected:
 	FVector LastKnownEnemyLocation = FVector::ZeroVector;
 	float LastEnemySeenTime = -100.0f;
 
+	/** Last time a standing (not downed) enemy was in sight */
+	float LastStandingEnemySeenTime = -100.0f;
+
 	bool bFiring = false;
 	float BurstEndTime = 0.0f;
 	float NextBurstTime = 0.0f;
@@ -84,6 +88,17 @@ protected:
 	bool bRoamer = false;
 	float NextRoamTime = 0.0f;
 	float NextScanTime = 0.0f;
+
+	/** Breacher job for this round */
+	enum class EBreachStep : uint8 { None, MoveToWall, Aim, Retreat, Done };
+
+	ESiegeGadget BreachGadget = ESiegeGadget::None;
+	EBreachStep BreachStep = EBreachStep::None;
+	TWeakObjectPtr<class ASiegeWall> BreachWall;
+	FVector BreachStand = FVector::ZeroVector;
+	FVector BreachRetreat = FVector::ZeroVector;
+	float BreachStepTime = 0.0f;
+	float LastBreachTick = -1.0f;
 
 public:
 
@@ -130,4 +145,13 @@ protected:
 
 	/** Breaks barricades blocking the way and recovers from getting stuck */
 	void HandleStuck(ASiegeOperator* Op, float Now);
+
+	/** Runs the breacher routine. Returns true while it is in control of the bot */
+	bool UpdateBreach(ASiegeGameMode* GM, ASiegeOperator* Op, float Now);
+
+	/** Picks a site wall to open and where to stand to charge it */
+	bool PickBreachWall(ASiegeGameMode* GM, ASiegeOperator* Op);
+
+	/** Moves to and revives a nearby downed teammate. Returns true while busy reviving */
+	bool UpdateRevive(ASiegeOperator* Op, float Now);
 };

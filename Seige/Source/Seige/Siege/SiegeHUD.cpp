@@ -68,6 +68,11 @@ void ASiegeHUD::DrawHUD()
 		{
 			DrawDeathInfo(Op);
 		}
+		else if (Op->IsDowned())
+		{
+			DrawWorldMarkers(GS);
+			DrawDowned(Op);
+		}
 		else
 		{
 			DrawWorldMarkers(GS);
@@ -209,6 +214,10 @@ void ASiegeHUD::DrawRosters(ASiegeGameState* GS)
 			{
 				Line += FString::Printf(TEXT("  [%s]"), *Op->GetOperatorDef().Name);
 			}
+			if (Op->IsDowned())
+			{
+				Line = TEXT("DOWN  ") + Line;
+			}
 			if (bDead)
 			{
 				Line = TEXT("X  ") + Line;
@@ -349,6 +358,7 @@ void ASiegeHUD::DrawInteraction(ASiegeOperator* Op)
 		case ESiegeInteraction::PlantDevice:	Label = TEXT("PLANTING DEVICE"); break;
 		case ESiegeInteraction::DisableDevice:	Label = TEXT("DISABLING DEVICE"); break;
 		case ESiegeInteraction::Reinforce:		Label = TEXT("REINFORCING"); break;
+		case ESiegeInteraction::Revive:			Label = TEXT("REVIVING"); break;
 		default: break;
 		}
 
@@ -372,6 +382,22 @@ void ASiegeHUD::DrawWorldMarkers(ASiegeGameState* GS)
 	}
 
 	const FVector ViewLoc = PlayerOwner->PlayerCameraManager ? PlayerOwner->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector;
+
+	// downed teammates waiting for a revive
+	for (const ASiegeOperator* Op : GM->GetRoundOperators())
+	{
+		if (!IsValid(Op) || !Op->IsDowned() || Op->IsDead() || Op->GetTeam() != MyTeam || Op == (PlayerOwner ? PlayerOwner->GetPawn() : nullptr))
+		{
+			continue;
+		}
+
+		const FVector Screen = Project(Op->GetActorLocation() + FVector(0, 0, 40.0f), true);
+		if (Screen.Z > 0.0f)
+		{
+			const int32 Meters = FMath::RoundToInt(FVector::Dist(ViewLoc, Op->GetActorLocation()) / 100.0f);
+			Text(FString::Printf(TEXT("+ REVIVE %s  %dm  (%ds)"), *Op->GetDisplayName(), Meters, FMath::CeilToInt(Op->GetBleedOutTime())), Screen.X, Screen.Y, FLinearColor(0.4f, 1.0f, 0.5f, 1.0f), SmallFont, 1.1f, 0.5f);
+		}
+	}
 
 	// enemies revealed by intel gadgets
 	for (const ASiegeOperator* Op : GM->GetRoundOperators())
@@ -435,7 +461,8 @@ void ASiegeHUD::DrawKillFeed(ASiegeGameState* GS)
 			continue;
 		}
 
-		const FString Line = FString::Printf(TEXT("%s  %s  %s"), *Entry.KillerName, Entry.bHeadshot ? TEXT("[HEADSHOT]") : TEXT(">"), *Entry.VictimName);
+		const TCHAR* Verb = Entry.bDowned ? TEXT("[DOWN]") : (Entry.bHeadshot ? TEXT("[HEADSHOT]") : TEXT(">"));
+		const FString Line = FString::Printf(TEXT("%s  %s  %s"), *Entry.KillerName, Verb, *Entry.VictimName);
 		Box(X - 330.0f * UIScale, Y - 2.0f, 330.0f * UIScale, 22.0f * UIScale, Panel);
 		Text(Line, X - 8.0f * UIScale, Y, TeamColor(Entry.KillerTeam), SmallFont, 1.0f, 1.0f);
 		Y += 26.0f * UIScale;
@@ -599,6 +626,20 @@ void ASiegeHUD::DrawObservation(ASiegeOperator* Op)
 	}
 
 	Text(Help, CX, Canvas->ClipY - 80.0f * UIScale, Dim, SmallFont, 1.0f, 0.5f);
+}
+
+void ASiegeHUD::DrawDowned(ASiegeOperator* Op)
+{
+	// heavy red vignette that pulses as you bleed out
+	const float Pulse = 0.5f + 0.5f * FMath::Sin(GetWorld()->GetTimeSeconds() * 4.0f);
+	Box(0, 0, Canvas->ClipX, Canvas->ClipY, FLinearColor(0.5f, 0.0f, 0.0f, 0.25f + 0.1f * Pulse));
+
+	const float CX = Canvas->ClipX * 0.5f;
+	const float Y = Canvas->ClipY * 0.42f;
+
+	Text(TEXT("YOU ARE DOWN"), CX, Y, Danger, LargeFont, 1.6f, 0.5f);
+	Text(FString::Printf(TEXT("Bleeding out in %d s  -  wait for a teammate to revive you"), FMath::CeilToInt(Op->GetBleedOutTime())), CX, Y + 50.0f * UIScale, White, MediumFont, 1.0f, 0.5f);
+	Text(TEXT("[WASD] crawl"), CX, Y + 80.0f * UIScale, Dim, SmallFont, 1.0f, 0.5f);
 }
 
 void ASiegeHUD::DrawDeathInfo(ASiegeOperator* Op)
