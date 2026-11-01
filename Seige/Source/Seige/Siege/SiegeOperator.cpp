@@ -401,8 +401,28 @@ void ASiegeOperator::SetAiming(bool bAim)
 	}
 }
 
+void ASiegeOperator::ReleaseHeldInputs()
+{
+	DoStopFiring();
+	StopInteract();
+	SetAiming(false);
+	SetSprinting(false);
+	bLeanLeftHeld = false;
+	bLeanRightHeld = false;
+	RefreshLean();
+}
+
 void ASiegeOperator::UpdateAim(float DeltaSeconds)
 {
+	// read every frame so a change in the pause menu applies as soon as the game resumes
+	if (IsPlayerControlled())
+	{
+		if (const USiegeUserSettings* Settings = USiegeUserSettings::Get())
+		{
+			BaseFieldOfView = FMath::Clamp(Settings->FieldOfView, 60.0f, 120.0f);
+		}
+	}
+
 	const float Target = (bAimHeld && !IsSprinting() && !IsInteracting()) ? 1.0f : 0.0f;
 	AimAlpha = FMath::FInterpTo(AimAlpha, Target, DeltaSeconds, 12.0f);
 
@@ -629,11 +649,13 @@ float ASiegeOperator::TakeDamage(float Damage, FDamageEvent const& DamageEvent, 
 	}
 
 	bool bHeadshot = false;
+	FName HitBone = NAME_None;
 
 	if (DamageEvent.IsOfType(FPointDamageEvent::ClassID))
 	{
 		const FPointDamageEvent& PointEvent = static_cast<const FPointDamageEvent&>(DamageEvent);
-		const FString Bone = PointEvent.HitInfo.BoneName.ToString().ToLower();
+		HitBone = PointEvent.HitInfo.BoneName;
+		const FString Bone = HitBone.ToString().ToLower();
 
 		bHeadshot = Bone.Contains(TEXT("head"));
 
@@ -655,6 +677,11 @@ float ASiegeOperator::TakeDamage(float Damage, FDamageEvent const& DamageEvent, 
 	// headshots, explosions and hits on someone already down kill outright
 	ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>();
 	const bool bWouldDie = CurrentHP - Damage <= 0.0f;
+
+	if (GM)
+	{
+		GM->OnOperatorDamaged(this, Damage, HitBone, EventInstigator, bHeadshot);
+	}
 
 	if (bWouldDie && !bDowned && !bHeadshot && Cast<ASiegeGun>(DamageCauser) && GM && GM->CanOperatorGoDown(this))
 	{

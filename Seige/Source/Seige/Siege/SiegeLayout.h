@@ -9,6 +9,22 @@ class AActor;
 class ASiegeBombSite;
 class UWorld;
 
+/** A stationary target in the firing range */
+struct FSiegeDummySpot
+{
+	FTransform Transform;
+
+	/** 0 stands with the player and can be revived, 1 is the enemy */
+	uint8 Team = 1;
+
+	float MaxHealth = 100.0f;
+
+	/** How far it walks to either side of its spot. 0 stands still */
+	float StrafeDistance = 0.0f;
+
+	FString Name;
+};
+
 /** Everything the game mode needs to know about a built map */
 struct FSiegeLayoutResult
 {
@@ -35,6 +51,9 @@ struct FSiegeLayoutResult
 
 	/** Defender security cameras placed around the map */
 	TArray<TWeakObjectPtr<class ASiegeSecurityCamera>> Cameras;
+
+	/** Targets to spawn, firing range only */
+	TArray<FSiegeDummySpot> DummySpots;
 };
 
 /**
@@ -67,6 +86,9 @@ namespace SiegeLayout
 
 	/** Builds the map with the bomb sites of the given set: 0 = ground floor (A Office, B Server), 1 = basement (A Vault, B Generator) */
 	SEIGE_API void BuildEmbassy(UWorld* World, FSiegeLayoutResult& Out, int32 SiteSet = 0);
+
+	/** Builds the firing range: shooting lanes, a wall test row, a two-storey breach house and a movement course */
+	SEIGE_API void BuildRange(UWorld* World, FSiegeLayoutResult& Out);
 
 	/** Readable name of a site set for messages */
 	SEIGE_API FString GetSiteSetName(int32 SiteSet);

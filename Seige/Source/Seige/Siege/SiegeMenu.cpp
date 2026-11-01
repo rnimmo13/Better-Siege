@@ -37,7 +37,9 @@ void ASiegeMenuPlayerController::BeginPlay()
 	}
 
 	Menu = SNew(SSiegeMainMenu)
+		.SecondaryLabel(NSLOCTEXT("SiegeMainMenu", "FiringRange", "FIRING RANGE"))
 		.OnPlay(FSimpleDelegate::CreateUObject(this, &ASiegeMenuPlayerController::StartMatch))
+		.OnSecondary(FSimpleDelegate::CreateUObject(this, &ASiegeMenuPlayerController::StartRange))
 		.OnQuit(FSimpleDelegate::CreateUObject(this, &ASiegeMenuPlayerController::QuitGame));
 
 	MenuContainer = SNew(SWeakWidget).PossiblyNullContent(Menu);
@@ -73,6 +75,12 @@ void ASiegeMenuPlayerController::StartMatch()
 {
 	UE_LOG(LogSeige, Log, TEXT("Menu: starting match on %s"), *PlayMap);
 	UGameplayStatics::OpenLevel(this, FName(*PlayMap));
+}
+
+void ASiegeMenuPlayerController::StartRange()
+{
+	UE_LOG(LogSeige, Log, TEXT("Menu: opening firing range %s"), *RangeMap);
+	UGameplayStatics::OpenLevel(this, FName(*RangeMap));
 }
 
 void ASiegeMenuPlayerController::QuitGame()

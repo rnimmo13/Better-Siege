@@ -49,6 +49,7 @@ protected:
 	void DrawObservation(ASiegeOperator* Op);
 	void DrawScoreboard(ASiegeGameState* GS);
 	void DrawControlsHelp(ASiegeGameState* GS);
+	void DrawRangePanel(const class ASiegeRangeGameMode* Range, const ASiegeOperator* Op);
 
 	/** Draws text with a drop shadow. Alignment: 0 left, 0.5 center, 1 right */
 	void Text(const FString& InText, float X, float Y, const FLinearColor& Color, UFont* Font, float Scale = 1.0f, float AlignX = 0.0f);

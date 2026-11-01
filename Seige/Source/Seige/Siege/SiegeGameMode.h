@@ -142,24 +142,30 @@ public:
 	FString GetDisplayNameFor(AController* Controller) const;
 
 	ASiegeGameState* GetSiegeGameState() const;
+
+	/** True for the firing range, which has no rounds, score or bots */
+	virtual bool IsSandbox() const { return false; }
 	// ~End queries
 
 	// ~Begin events
 	/** Spawns a recon drone at the operator's feet. Returns null if it has none left */
 	class ASiegeDrone* DeployDrone(ASiegeOperator* Operator);
 
-	void RequestOperator(APlayerController* Player, int32 SideIndex);
+	virtual void RequestOperator(APlayerController* Player, int32 SideIndex);
 	void CompletePlant(ASiegeOperator* Planter);
 	void CompleteDisable(ASiegeOperator* Defuser);
 	void OnDeviceDetonated(ASiegeDevice* Device);
 	void OnOperatorKilled(ASiegeOperator* Victim, AController* Killer, bool bHeadshot);
 	void OnOperatorDowned(ASiegeOperator* Victim, AController* Downer);
 
+	/** Called for every hit on an operator, after hit zone multipliers */
+	virtual void OnOperatorDamaged(ASiegeOperator* Victim, float Damage, FName HitBone, AController* DamageInstigator, bool bHeadshot) {}
+
 	/** Lets bots hear a sound. Loudness 1 = gunshot. SourceTeam 255 = heard by everyone */
 	void ReportNoise(const FVector& Location, float Loudness, uint8 SourceTeam);
 
 	/** An operator can only go down (instead of dying) while a teammate is still standing to revive them */
-	bool CanOperatorGoDown(const ASiegeOperator* Victim) const;
+	virtual bool CanOperatorGoDown(const ASiegeOperator* Victim) const;
 
 	/** Lets one attacker bot per breaching gadget take the breacher job this round */
 	bool TryClaimBreachRole(ESiegeGadget Gadget);
@@ -181,7 +187,7 @@ protected:
 	void BeginPreparation();
 	void BeginAction();
 	void OnActionTimeExpired();
-	void EndRound(uint8 Winner, ESiegeRoundEndReason Reason);
+	virtual void EndRound(uint8 Winner, ESiegeRoundEndReason Reason);
 	void OnRoundOverFinished();
 
 	void SetPhase(ESiegePhase NewPhase, float Duration);
@@ -196,7 +202,7 @@ protected:
 	void AssignBotOperators();
 
 	/** Checks the elimination win conditions */
-	void CheckEliminations();
+	virtual void CheckEliminations();
 
 	int32 CountAlive(uint8 Team) const;
 
