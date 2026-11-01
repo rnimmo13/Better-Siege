@@ -221,6 +221,9 @@ public:
 	void UseSecondaryGadget();
 	void ReloadWeapon();
 	void Melee();
+
+	/** Lets go of everything held, for when a menu takes over input and the key releases never arrive */
+	void ReleaseHeldInputs();
 	// ~End input handlers
 
 	/** Called by the gun before a shot. Returns false to block firing */

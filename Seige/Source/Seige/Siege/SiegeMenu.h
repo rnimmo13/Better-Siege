@@ -37,6 +37,10 @@ public:
 	UPROPERTY(EditAnywhere, Category="Menu")
 	FString PlayMap = TEXT("/Game/Siege/Maps/Lvl_Embassy");
 
+	/** Map opened by the Firing Range button */
+	UPROPERTY(EditAnywhere, Category="Menu")
+	FString RangeMap = TEXT("/Game/Siege/Maps/Lvl_Range");
+
 protected:
 
 	TSharedPtr<SSiegeMainMenu> Menu;
@@ -46,5 +50,6 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	void StartMatch();
+	void StartRange();
 	void QuitGame();
 };

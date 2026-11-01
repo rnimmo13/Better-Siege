@@ -5,7 +5,13 @@
 #include "SiegeGameMode.h"
 #include "SiegePlayerState.h"
 #include "SiegeObservation.h"
+#include "SiegeRangeGameMode.h"
+#include "SiegeUserSettings.h"
+#include "SSiegeMainMenu.h"
 #include "AIController.h"
+#include "Engine/GameViewportClient.h"
+#include "Kismet/GameplayStatics.h"
+#include "Widgets/SWeakWidget.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -46,6 +52,126 @@ void ASiegePlayerController::BeginPlay()
 	{
 		bShowMouseCursor = false;
 		SetInputMode(FInputModeGameOnly());
+
+		// a saved volume has to apply even when the front end was skipped
+		if (const USiegeUserSettings* Settings = USiegeUserSettings::Get())
+		{
+			Settings->ApplyAudio();
+		}
+	}
+}
+
+void ASiegePlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (PauseMenuContainer.IsValid())
+	{
+		if (UGameViewportClient* Viewport = GetWorld()->GetGameViewport())
+		{
+			Viewport->RemoveViewportWidgetContent(PauseMenuContainer.ToSharedRef());
+		}
+	}
+
+	if (PauseMenu.IsValid())
+	{
+		PauseMenu->CommitSettings();
+	}
+
+	PauseMenuContainer.Reset();
+	PauseMenu.Reset();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void ASiegePlayerController::TogglePauseMenu()
+{
+	if (IsPauseMenuOpen())
+	{
+		ClosePauseMenu();
+	}
+	else
+	{
+		OpenPauseMenu();
+	}
+}
+
+void ASiegePlayerController::OpenPauseMenu()
+{
+	UGameViewportClient* Viewport = GetWorld()->GetGameViewport();
+	if (!Viewport || !IsLocalPlayerController() || IsPauseMenuOpen())
+	{
+		return;
+	}
+
+	// the key releases won't reach the operator once the menu has the input
+	ASiegeOperator* Op = GetOperator();
+	if (Op && !Op->IsDead())
+	{
+		Op->ReleaseHeldInputs();
+	}
+
+	const bool bRange = GetWorld()->GetAuthGameMode<ASiegeRangeGameMode>() != nullptr;
+
+	PauseMenu = SNew(SSiegeMainMenu)
+		.bPauseMenu(true)
+		.SecondaryLabel(bRange ? NSLOCTEXT("SiegePauseMenu", "ResetRange", "RESET RANGE") : FText::GetEmpty())
+		.OnPlay(FSimpleDelegate::CreateUObject(this, &ASiegePlayerController::ClosePauseMenu))
+		.OnSecondary(FSimpleDelegate::CreateUObject(this, &ASiegePlayerController::ResetRangeFromMenu))
+		.OnQuit(FSimpleDelegate::CreateUObject(this, &ASiegePlayerController::ReturnToMainMenu));
+
+	PauseMenuContainer = SNew(SWeakWidget).PossiblyNullContent(PauseMenu);
+	Viewport->AddViewportWidgetContent(PauseMenuContainer.ToSharedRef(), 20);
+
+	bShowMouseCursor = true;
+
+	FInputModeUIOnly InputMode;
+	InputMode.SetWidgetToFocus(PauseMenu);
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(InputMode);
+
+	PauseMenu->FocusDefault();
+	SetPause(true);
+}
+
+void ASiegePlayerController::ClosePauseMenu()
+{
+	if (!IsPauseMenuOpen())
+	{
+		return;
+	}
+
+	PauseMenu->CommitSettings();
+
+	if (UGameViewportClient* Viewport = GetWorld()->GetGameViewport())
+	{
+		Viewport->RemoveViewportWidgetContent(PauseMenuContainer.ToSharedRef());
+	}
+
+	PauseMenuContainer.Reset();
+	PauseMenu.Reset();
+
+	SetPause(false);
+	bShowMouseCursor = false;
+	SetInputMode(FInputModeGameOnly());
+	FlushPressedKeys();
+}
+
+void ASiegePlayerController::ReturnToMainMenu()
+{
+	ClosePauseMenu();
+	UGameplayStatics::OpenLevel(this, FName(TEXT("/Game/Siege/Maps/Lvl_MainMenu")));
+}
+
+void ASiegePlayerController::ResetRangeFromMenu()
+{
+	ClosePauseMenu();
+	OnResetRangePressed();
+}
+
+void ASiegePlayerController::OnResetRangePressed()
+{
+	if (ASiegeRangeGameMode* Range = GetWorld()->GetAuthGameMode<ASiegeRangeGameMode>())
+	{
+		Range->ResetRange();
 	}
 }
 
@@ -83,6 +209,10 @@ void ASiegePlayerController::EnsureSiegeInput()
 	MakeAction(TEXT("Select2"), { EKeys::Two });
 	MakeAction(TEXT("Select3"), { EKeys::Three });
 	MakeAction(TEXT("Select4"), { EKeys::Four });
+	MakeAction(TEXT("Select5"), { EKeys::Five });
+	MakeAction(TEXT("Select6"), { EKeys::Six });
+	MakeAction(TEXT("PauseMenu"), { EKeys::Escape, EKeys::P });
+	MakeAction(TEXT("ResetRange"), { EKeys::F6 });
 	MakeAction(TEXT("SpectateNext"), { EKeys::LeftMouseButton, EKeys::SpaceBar });
 	MakeAction(TEXT("Scoreboard"), { EKeys::Tab });
 	MakeAction(TEXT("Observe"), { EKeys::X });
@@ -124,6 +254,10 @@ void ASiegePlayerController::SetupInputComponent()
 		EIC->BindAction(GetSiegeAction(TEXT("Select2")), ETriggerEvent::Started, this, &ASiegePlayerController::SelectOperator2);
 		EIC->BindAction(GetSiegeAction(TEXT("Select3")), ETriggerEvent::Started, this, &ASiegePlayerController::SelectOperator3);
 		EIC->BindAction(GetSiegeAction(TEXT("Select4")), ETriggerEvent::Started, this, &ASiegePlayerController::SelectOperator4);
+		EIC->BindAction(GetSiegeAction(TEXT("Select5")), ETriggerEvent::Started, this, &ASiegePlayerController::SelectOperator5);
+		EIC->BindAction(GetSiegeAction(TEXT("Select6")), ETriggerEvent::Started, this, &ASiegePlayerController::SelectOperator6);
+		EIC->BindAction(GetSiegeAction(TEXT("PauseMenu")), ETriggerEvent::Started, this, &ASiegePlayerController::TogglePauseMenu);
+		EIC->BindAction(GetSiegeAction(TEXT("ResetRange")), ETriggerEvent::Started, this, &ASiegePlayerController::OnResetRangePressed);
 		EIC->BindAction(GetSiegeAction(TEXT("SpectateNext")), ETriggerEvent::Started, this, &ASiegePlayerController::SpectateNext);
 		EIC->BindAction(GetSiegeAction(TEXT("Scoreboard")), ETriggerEvent::Started, this, &ASiegePlayerController::ShowScoreboard);
 		EIC->BindAction(GetSiegeAction(TEXT("Scoreboard")), ETriggerEvent::Completed, this, &ASiegePlayerController::HideScoreboard);

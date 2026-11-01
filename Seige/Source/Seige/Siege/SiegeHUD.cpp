@@ -3,6 +3,7 @@
 #include "SiegeHUD.h"
 #include "SiegeGameState.h"
 #include "SiegeGameMode.h"
+#include "SiegeRangeGameMode.h"
 #include "SiegePlayerState.h"
 #include "SiegePlayerController.h"
 #include "SiegeOperator.h"
@@ -85,6 +86,11 @@ void ASiegeHUD::DrawHUD()
 	DrawControlsHelp(GS);
 	DrawRoundBanner(GS);
 
+	if (const ASiegeRangeGameMode* Range = GetWorld()->GetAuthGameMode<ASiegeRangeGameMode>())
+	{
+		DrawRangePanel(Range, Op);
+	}
+
 	const ASiegePlayerController* PC = Cast<ASiegePlayerController>(PlayerOwner);
 	if ((PC && PC->IsScoreboardShown()) || GS->Phase == ESiegePhase::MatchOver)
 	{
@@ -161,6 +167,14 @@ void ASiegeHUD::DrawTopBar(ASiegeGameState* GS)
 
 	Box(CX - W * 0.5f, Y, W, H, Panel);
 
+	if (const ASiegeGameMode* Mode = GetWorld()->GetAuthGameMode<ASiegeGameMode>(); Mode && Mode->IsSandbox())
+	{
+		const bool bDevice = GS->Phase == ESiegePhase::PostPlant;
+		Text(bDevice ? FormatTime(GS->GetPhaseTimeRemaining()) : FString(TEXT("FIRING RANGE")), CX, Y + 6.0f * UIScale, bDevice ? Danger : White, LargeFont, bDevice ? 1.5f : 1.1f, 0.5f);
+		Text(bDevice ? FString::Printf(TEXT("DEVICE AT SITE %s"), *GS->PlantedSite) : FString(TEXT("SANDBOX")), CX, Y + 50.0f * UIScale, bDevice ? Danger : Dim, SmallFont, 1.0f, 0.5f);
+		return;
+	}
+
 	const uint8 EnemyTeam = 1 - MyTeam;
 	const bool bWeAttack = GS->AttackingTeam == MyTeam;
 
@@ -188,7 +202,7 @@ void ASiegeHUD::DrawTopBar(ASiegeGameState* GS)
 void ASiegeHUD::DrawRosters(ASiegeGameState* GS)
 {
 	const ASiegeGameMode* GM = GetWorld()->GetAuthGameMode<ASiegeGameMode>();
-	if (!GM)
+	if (!GM || GM->IsSandbox())
 	{
 		return;
 	}
@@ -703,9 +717,52 @@ void ASiegeHUD::DrawScoreboard(ASiegeGameState* GS)
 	}
 }
 
+void ASiegeHUD::DrawRangePanel(const ASiegeRangeGameMode* Range, const ASiegeOperator* Op)
+{
+	const float X = 16.0f * UIScale;
+	const float LineH = 19.0f * UIScale;
+	const TArray<FSiegeOperatorDef>& Roster = Range->GetOperators();
+	const TArray<FSiegeRangeHit>& Hits = Range->GetRecentHits();
+
+	float Y = 14.0f * UIScale;
+	Box(X - 6.0f * UIScale, Y - 4.0f * UIScale, 540.0f * UIScale, LineH * (Roster.Num() + Hits.Num() + 5) + 8.0f * UIScale, Panel);
+
+	Text(TEXT("OPERATOR  (press number to switch or restock)"), X, Y, Dim, SmallFont);
+	Y += LineH;
+
+	for (int32 i = 0; i < Roster.Num(); ++i)
+	{
+		const bool bCurrent = Op && Op->GetOperatorDef().Name == Roster[i].Name;
+		const FString Gadget = SiegeGadgets::GetName(Roster[i].UniqueGadget);
+		Text(FString::Printf(TEXT("[%d] %s - %s - %s"), i + 1, *Roster[i].Name, Roster[i].bAttacker ? TEXT("Attack") : TEXT("Defend"), *Gadget), X, Y, bCurrent ? Warning : White, SmallFont);
+		Y += LineH;
+	}
+
+	Text(TEXT("[F6] reset walls and targets    [Esc] menu"), X, Y, Dim, SmallFont);
+	Y += LineH * 1.5f;
+
+	Text(TEXT("LAST HITS"), X, Y, Dim, SmallFont);
+	Y += LineH;
+
+	if (Hits.Num() == 0)
+	{
+		Text(TEXT("Shoot a target to see damage here"), X, Y, Dim, SmallFont);
+	}
+
+	for (const FSiegeRangeHit& Hit : Hits)
+	{
+		const FString Damage = Hit.bHeadshot ? FString(TEXT("HEADSHOT")) : FString::Printf(TEXT("%.0f dmg"), Hit.Damage);
+		Text(FString::Printf(TEXT("%s  %s  %.0fm  %s  (%.0f HP left)"), *Damage, *Hit.Zone, Hit.Distance, *Hit.Victim, Hit.HealthLeft), X, Y, Hit.bHeadshot ? Danger : White, SmallFont);
+		Y += LineH;
+	}
+}
+
 void ASiegeHUD::DrawControlsHelp(ASiegeGameState* GS)
 {
-	if (GS->Phase != ESiegePhase::Preparation && GS->Phase != ESiegePhase::OperatorSelect)
+	const ASiegeGameMode* Mode = GetWorld()->GetAuthGameMode<ASiegeGameMode>();
+	const bool bSandbox = Mode && Mode->IsSandbox();
+
+	if (!bSandbox && GS->Phase != ESiegePhase::Preparation && GS->Phase != ESiegePhase::OperatorSelect)
 	{
 		return;
 	}

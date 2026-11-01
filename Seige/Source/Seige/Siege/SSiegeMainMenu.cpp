@@ -6,6 +6,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/SOverlay.h"
+#include "Widgets/SNullWidget.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Layout/SWidgetSwitcher.h"
 #include "Widgets/Layout/SBorder.h"
@@ -87,7 +88,13 @@ USiegeUserSettings* SSiegeMainMenu::Settings()
 void SSiegeMainMenu::Construct(const FArguments& InArgs)
 {
 	OnPlay = InArgs._OnPlay;
+	OnSecondary = InArgs._OnSecondary;
 	OnQuit = InArgs._OnQuit;
+	bPauseMenu = InArgs._bPauseMenu;
+
+	const bool bHasSecondary = !InArgs._SecondaryLabel.IsEmpty();
+
+	RememberAppliedVideo();
 
 	UKismetSystemLibrary::GetSupportedFullscreenResolutions(Resolutions);
 	if (Resolutions.Num() == 0)
@@ -104,7 +111,7 @@ void SSiegeMainMenu::Construct(const FArguments& InArgs)
 		[
 			SNew(SBorder)
 			.BorderImage(MenuWhite())
-			.BorderBackgroundColor(FLinearColor(0.006f, 0.007f, 0.01f, 1.0f))
+			.BorderBackgroundColor(FLinearColor(0.006f, 0.007f, 0.01f, bPauseMenu ? 0.45f : 1.0f))
 		]
 
 		+ SOverlay::Slot()
@@ -135,7 +142,7 @@ void SSiegeMainMenu::Construct(const FArguments& InArgs)
 						.AutoHeight()
 						[
 							SNew(STextBlock)
-							.Text(LOCTEXT("Title", "BETTER\nSIEGE"))
+							.Text(bPauseMenu ? LOCTEXT("PausedTitle", "PAUSED") : LOCTEXT("Title", "BETTER\nSIEGE"))
 							.Font(Font(54, true))
 							.ColorAndOpacity(TextColor)
 						]
@@ -145,7 +152,7 @@ void SSiegeMainMenu::Construct(const FArguments& InArgs)
 						.Padding(0.0f, 6.0f, 0.0f, 48.0f)
 						[
 							SNew(STextBlock)
-							.Text(LOCTEXT("Subtitle", "5v5 TACTICAL BREACH  |  SOLO VS BOTS"))
+							.Text(bPauseMenu ? LOCTEXT("PausedSubtitle", "BETTER SIEGE") : LOCTEXT("Subtitle", "5v5 TACTICAL BREACH  |  SOLO VS BOTS"))
 							.Font(Font(12, true))
 							.ColorAndOpacity(Accent)
 						]
@@ -154,7 +161,16 @@ void SSiegeMainMenu::Construct(const FArguments& InArgs)
 						.AutoHeight()
 						.Padding(0.0f, 0.0f, 0.0f, 10.0f)
 						[
-							MakeMenuButton(LOCTEXT("Play", "PLAY"), FSimpleDelegate::CreateLambda([this]() { OnPlay.ExecuteIfBound(); }), &PlayButton)
+							MakeMenuButton(bPauseMenu ? LOCTEXT("Resume", "RESUME") : LOCTEXT("Play", "PLAY"), FSimpleDelegate::CreateLambda([this]() { OnPlay.ExecuteIfBound(); }), &PlayButton)
+						]
+
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.0f, 0.0f, 0.0f, bHasSecondary ? 10.0f : 0.0f)
+						[
+							bHasSecondary
+								? MakeMenuButton(InArgs._SecondaryLabel, FSimpleDelegate::CreateLambda([this]() { OnSecondary.ExecuteIfBound(); }))
+								: SNullWidget::NullWidget
 						]
 
 						+ SVerticalBox::Slot()
@@ -167,7 +183,7 @@ void SSiegeMainMenu::Construct(const FArguments& InArgs)
 						+ SVerticalBox::Slot()
 						.AutoHeight()
 						[
-							MakeMenuButton(LOCTEXT("Quit", "QUIT"), FSimpleDelegate::CreateLambda([this]() { OnQuit.ExecuteIfBound(); }))
+							MakeMenuButton(bPauseMenu ? LOCTEXT("MainMenu", "MAIN MENU") : LOCTEXT("Quit", "QUIT"), FSimpleDelegate::CreateLambda([this]() { OnQuit.ExecuteIfBound(); }))
 						]
 
 						+ SVerticalBox::Slot()
@@ -256,7 +272,7 @@ void SSiegeMainMenu::Construct(const FArguments& InArgs)
 								.Text(LOCTEXT("Unsaved", "Unsaved changes"))
 								.Font(Font(11))
 								.ColorAndOpacity(Accent)
-								.Visibility_Lambda([this]() { return bDirty ? EVisibility::Visible : EVisibility::Hidden; })
+								.Visibility_Lambda([this]() { return (bPauseMenu ? HasUnappliedVideo() : bDirty) ? EVisibility::Visible : EVisibility::Hidden; })
 							]
 
 							+ SHorizontalBox::Slot()
@@ -289,13 +305,63 @@ void SSiegeMainMenu::FocusDefault()
 
 FReply SSiegeMainMenu::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
 {
-	if (bSettingsOpen && (InKeyEvent.GetKey() == EKeys::Escape || InKeyEvent.GetKey() == EKeys::Gamepad_FaceButton_Right))
+	// P also opens the pause menu, and a long press must not close what it just opened
+	const bool bPauseKey = bPauseMenu && (InKeyEvent.GetKey() == EKeys::Escape || InKeyEvent.GetKey() == EKeys::P);
+	if (bPauseKey && InKeyEvent.IsRepeat())
+	{
+		return FReply::Handled();
+	}
+
+	if (bSettingsOpen && (bPauseKey || InKeyEvent.GetKey() == EKeys::Escape || InKeyEvent.GetKey() == EKeys::Gamepad_FaceButton_Right))
 	{
 		CloseSettings();
 		return FReply::Handled();
 	}
 
+	if (bPauseKey)
+	{
+		OnPlay.ExecuteIfBound();
+		return FReply::Handled();
+	}
+
 	return SCompoundWidget::OnKeyDown(MyGeometry, InKeyEvent);
+}
+
+FReply SSiegeMainMenu::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	// clicking empty space must not hand keyboard focus to the game viewport, or Esc stops reaching the menu
+	return FReply::Handled().SetUserFocus(SharedThis(this), EFocusCause::Mouse);
+}
+
+void SSiegeMainMenu::RememberAppliedVideo()
+{
+	if (const USiegeUserSettings* S = Settings())
+	{
+		AppliedResolution = S->GetScreenResolution();
+		AppliedWindowMode = S->GetFullscreenMode();
+	}
+}
+
+bool SSiegeMainMenu::HasUnappliedVideo() const
+{
+	const USiegeUserSettings* S = Settings();
+	return S && (S->GetScreenResolution() != AppliedResolution || S->GetFullscreenMode() != AppliedWindowMode);
+}
+
+void SSiegeMainMenu::CommitSettings()
+{
+	if (bPauseMenu && bDirty)
+	{
+		if (USiegeUserSettings* S = Settings())
+		{
+			S->SetScreenResolution(AppliedResolution);
+			S->SetFullscreenMode(AppliedWindowMode);
+			S->ApplyNonResolutionSettings();
+			S->SaveSettings();
+		}
+
+		bDirty = false;
+	}
 }
 
 void SSiegeMainMenu::ShowSettings()
@@ -305,6 +371,8 @@ void SSiegeMainMenu::ShowSettings()
 
 void SSiegeMainMenu::CloseSettings()
 {
+	CommitSettings();
+
 	// throw away anything that wasn't applied
 	if (bDirty)
 	{
@@ -329,6 +397,7 @@ void SSiegeMainMenu::ApplySettings()
 		S->ApplySettings(false);
 	}
 
+	RememberAppliedVideo();
 	bDirty = false;
 }
 

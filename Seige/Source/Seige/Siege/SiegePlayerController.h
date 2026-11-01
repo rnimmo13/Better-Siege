@@ -9,6 +9,8 @@
 class UInputAction;
 class UInputMappingContext;
 class ASiegeOperator;
+class SSiegeMainMenu;
+class SWidget;
 
 /**
  *  Player controller for the tactical mode.
@@ -44,12 +46,27 @@ protected:
 
 	void ReleaseBodyHolder();
 
+	/** Esc menu, null while closed */
+	TSharedPtr<SSiegeMainMenu> PauseMenu;
+	TSharedPtr<SWidget> PauseMenuContainer;
+
+	void OpenPauseMenu();
+	void ClosePauseMenu();
+	void ReturnToMainMenu();
+	void ResetRangeFromMenu();
+	void OnResetRangePressed();
+
 public:
 
 	ASiegePlayerController();
 
 	/** Returns a tactical input action by name (LeanLeft, LeanRight, Crouch, Sprint, Interact, Gadget, Secondary, Reload, Melee, Observe) */
 	UInputAction* GetSiegeAction(FName ActionName);
+
+	/** Opens the Esc menu and pauses the game, or closes it and resumes */
+	void TogglePauseMenu();
+
+	bool IsPauseMenuOpen() const { return PauseMenu.IsValid(); }
 
 	/** Called by the game mode when the possessed operator dies */
 	void OnOperatorDied();
@@ -83,6 +100,7 @@ public:
 protected:
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void SetupInputComponent() override;
 
 	/** Creates the runtime input actions and mapping context if needed */
@@ -93,6 +111,8 @@ protected:
 	void SelectOperator2() { SelectOperator(1); }
 	void SelectOperator3() { SelectOperator(2); }
 	void SelectOperator4() { SelectOperator(3); }
+	void SelectOperator5() { SelectOperator(4); }
+	void SelectOperator6() { SelectOperator(5); }
 
 	void SpectateNext();
 	void ShowScoreboard() { bShowScoreboard = true; }

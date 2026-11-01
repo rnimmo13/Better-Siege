@@ -8,6 +8,8 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/PointLight.h"
+#include "Engine/TextRenderActor.h"
+#include "Components/TextRenderComponent.h"
 #include "Engine/World.h"
 #include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -429,6 +431,24 @@ namespace SiegeLayout
 			Prop(FVector(At.X, At.Y, Height * 0.4f), FVector(40.0f, 40.0f, Height * 0.8f), Bark, true, FRotator::ZeroRotator, Cylinder);
 			Prop(FVector(At.X, At.Y, Height * 0.85f), FVector(Height * 0.6f, Height * 0.6f, Height * 0.5f), Leaves, false, FRotator::ZeroRotator, Sphere);
 			Prop(FVector(At.X + Height * 0.12f, At.Y - Height * 0.08f, Height * 0.7f), FVector(Height * 0.42f, Height * 0.42f, Height * 0.36f), Leaves, false, FRotator::ZeroRotator, Sphere);
+		}
+
+		/** Floating label. The text reads from the side its yaw faces */
+		void Sign(const FString& Text, const FVector& Location, float Yaw, float Size = 40.0f, const FColor& Color = FColor::White)
+		{
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			ATextRenderActor* Actor = World->SpawnActor<ATextRenderActor>(ATextRenderActor::StaticClass(), Location, FRotator(0.0f, Yaw, 0.0f), Params);
+			if (Actor)
+			{
+				UTextRenderComponent* Comp = Actor->GetTextRender();
+				Comp->SetText(FText::FromString(Text));
+				Comp->SetWorldSize(Size);
+				Comp->SetHorizontalAlignment(EHTA_Center);
+				Comp->SetTextRenderColor(Color);
+				Out->Actors.Add(Actor);
+			}
 		}
 
 		ASiegeRopeAnchor* Rope(const FVector& BaseOnWall, float OutwardYaw, float Height)
@@ -957,6 +977,172 @@ namespace SiegeLayout
 		B.SecurityCamera(TEXT("Cam: Upstairs"), FVector(-530.0f, 970.0f, 590.0f), -135.0f);
 		B.SecurityCamera(TEXT("Cam: Basement"), FVector(-1470.0f, 0.0f, BZ + 270.0f), 0.0f);
 		B.SecurityCamera(TEXT("Cam: Cellar"), FVector(470.0f, -170.0f, BZ + 270.0f), -135.0f);
+	}
+
+	void BuildRange(UWorld* World, FSiegeLayoutResult& Out)
+	{
+		FBuilder B;
+		B.World = World;
+		B.Out = &Out;
+		B.Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+		B.Cylinder = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+		B.Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+		B.S.Load();
+
+		if (!B.Cube || !B.Cylinder || !B.Sphere)
+		{
+			return;
+		}
+
+		const FSurfaces& S = B.S;
+		const float H = WallHeight;
+		const float UZ = UpperFloorZ;
+
+		// every label reads toward the player, who starts south of everything looking north
+		const float FaceSouth = -90.0f;
+		const FRotator LookSouth(0.0f, -90.0f, 0.0f);
+		const FRotator LookNorth(0.0f, 90.0f, 0.0f);
+
+		auto Dummy = [&Out](const FString& Name, const FVector& Location, const FRotator& Facing, float Health = 100.0f, uint8 Team = 1, float Strafe = 0.0f)
+		{
+			FSiegeDummySpot Spot;
+			Spot.Name = Name;
+			Spot.Transform = FTransform(Facing, Location);
+			Spot.MaxHealth = Health;
+			Spot.Team = Team;
+			Spot.StrafeDistance = Strafe;
+			Out.DummySpots.Add(Spot);
+		};
+
+		// ===== ground and perimeter =====
+		B.WallMat = S.Pavers;
+		B.Block(FVector(0.0f, 2200.0f, -25.0f), FVector(10000.0f, 8400.0f, 50.0f));					// y -2000..6400
+
+		B.WallMat = S.Concrete;
+		B.Block(FVector(0.0f, 6400.0f, 300.0f), FVector(10000.0f, 40.0f, 600.0f));
+		B.Block(FVector(0.0f, -2000.0f, 300.0f), FVector(10000.0f, 40.0f, 600.0f));
+		B.Block(FVector(-5000.0f, 2200.0f, 300.0f), FVector(40.0f, 8400.0f, 600.0f));
+		B.Block(FVector(5000.0f, 2200.0f, 300.0f), FVector(40.0f, 8400.0f, 600.0f));
+
+		Out.AttackerSpawns.Add(FTransform(LookNorth, FVector(0.0f, -500.0f, 100.0f)));
+		Out.DefenderSpawns.Add(FTransform(LookNorth, FVector(0.0f, -500.0f, 100.0f)));
+
+		// ===== shooting lanes, straight ahead of the spawn =====
+		UMaterialInterface* LaneWood = B.Tinted(S.Wood, FLinearColor(0.7f, 0.6f, 0.5f));
+		B.Block(FVector(-500.0f, 0.0f, 50.0f), FVector(800.0f, 40.0f, 100.0f), FRotator::ZeroRotator, LaneWood);	// firing line, gap in the middle
+		B.Block(FVector(500.0f, 0.0f, 50.0f), FVector(800.0f, 40.0f, 100.0f), FRotator::ZeroRotator, LaneWood);
+		B.Block(FVector(-1200.0f, 3250.0f, 100.0f), FVector(40.0f, 5900.0f, 200.0f), FRotator::ZeroRotator, S.Concrete);	// berms between the zones
+		B.Block(FVector(1200.0f, 3250.0f, 100.0f), FVector(40.0f, 5900.0f, 200.0f), FRotator::ZeroRotator, S.Concrete);
+		B.Block(FVector(0.0f, 6200.0f, 250.0f), FVector(2400.0f, 40.0f, 500.0f), FRotator::ZeroRotator, S.Concrete);		// backstop
+
+		B.Sign(TEXT("SHOOTING LANES"), FVector(0.0f, 20.0f, 150.0f), FaceSouth, 40.0f, FColor::Orange);
+
+		B.Sign(TEXT("10 m"), FVector(-800.0f, 1000.0f, 180.0f), FaceSouth, 50.0f);
+		Dummy(TEXT("Dummy 10m (100 HP)"), FVector(-400.0f, 1000.0f, 100.0f), LookSouth, 100.0f);
+		Dummy(TEXT("Dummy 10m (110 HP)"), FVector(0.0f, 1000.0f, 100.0f), LookSouth, 110.0f);
+		Dummy(TEXT("Dummy 10m (125 HP)"), FVector(400.0f, 1000.0f, 100.0f), LookSouth, 125.0f);
+
+		B.Sign(TEXT("MOVING"), FVector(-800.0f, 1700.0f, 180.0f), FaceSouth, 50.0f);
+		Dummy(TEXT("Moving dummy"), FVector(0.0f, 1700.0f, 100.0f), LookSouth, 100.0f, 1, 500.0f);
+
+		B.Sign(TEXT("25 m"), FVector(-800.0f, 2500.0f, 180.0f), FaceSouth, 60.0f);
+		Dummy(TEXT("Dummy 25m"), FVector(-400.0f, 2500.0f, 100.0f), LookSouth);
+		Dummy(TEXT("Dummy 25m"), FVector(400.0f, 2500.0f, 100.0f), LookSouth);
+
+		B.Sign(TEXT("50 m"), FVector(-800.0f, 5000.0f, 180.0f), FaceSouth, 80.0f);
+		Dummy(TEXT("Dummy 50m"), FVector(0.0f, 5000.0f, 100.0f), LookSouth);
+
+		// ===== wall row: west of the lanes, one of each surface with a target behind it =====
+		UMaterialInterface* LabPaint = B.Tinted(S.Plaster, FLinearColor(0.93f, 0.89f, 0.8f));
+		const float RowY = 700.0f;
+		const FRotator AlongX(0.0f, 90.0f, 0.0f);
+
+		B.Sign(TEXT("WALL TESTS"), FVector(-2600.0f, RowY, 400.0f), FaceSouth, 50.0f, FColor::Orange);
+
+		B.Panel(FVector(-1700.0f, RowY, H * 0.5f), AlongX, ESiegeWallKind::Soft, 400.0f, H, WallThickness, true, TEXT("Soft Wall"), false, LabPaint);
+		B.Sign(TEXT("SOFT"), FVector(-1700.0f, RowY - 20.0f, 310.0f), FaceSouth);
+		Dummy(TEXT("Dummy behind soft wall"), FVector(-1700.0f, RowY + 150.0f, 100.0f), LookSouth);
+
+		if (ASiegeWall* Reinforced = B.Panel(FVector(-2300.0f, RowY, H * 0.5f), AlongX, ESiegeWallKind::Soft, 400.0f, H, WallThickness, true, TEXT("Reinforced Wall"), false, LabPaint))
+		{
+			Reinforced->Reinforce();
+		}
+		B.Sign(TEXT("REINFORCED"), FVector(-2300.0f, RowY - 20.0f, 310.0f), FaceSouth);
+		Dummy(TEXT("Dummy behind reinforced wall"), FVector(-2300.0f, RowY + 150.0f, 100.0f), LookSouth);
+
+		B.Panel(FVector(-2900.0f, RowY, 110.0f), AlongX, ESiegeWallKind::Barricade, 400.0f, 220.0f, 6.0f, false, TEXT("Barricade"), false, S.Barricade);
+		B.Sign(TEXT("BARRICADE"), FVector(-2900.0f, RowY - 20.0f, 230.0f), FaceSouth);
+		Dummy(TEXT("Dummy behind barricade"), FVector(-2900.0f, RowY + 150.0f, 100.0f), LookSouth);
+
+		B.Panel(FVector(-3500.0f, RowY, H * 0.5f), AlongX, ESiegeWallKind::Soft, 400.0f, H, WallThickness, true, TEXT("Spare Wall"), false, LabPaint);
+		B.Sign(TEXT("REINFORCE ME"), FVector(-3500.0f, RowY - 20.0f, 310.0f), FaceSouth);
+
+		// ===== breach house: east of the lanes, two storeys with every kind of way in =====
+		const float HouseW = 1500.0f, HouseE = 3500.0f, HouseS = 500.0f, HouseN = 1700.0f;
+
+		B.Sign(TEXT("BREACH HOUSE"), FVector(2500.0f, HouseS - 20.0f, UZ + H + 60.0f), FaceSouth, 60.0f, FColor::Orange);
+
+		for (const FVector2D& Corner : { FVector2D(HouseW, HouseS), FVector2D(HouseE, HouseS), FVector2D(HouseW, HouseN), FVector2D(HouseE, HouseN) })
+		{
+			B.Block(FVector(Corner.X, Corner.Y, (UZ + H) * 0.5f), FVector(40.0f, 40.0f, UZ + H), FRotator::ZeroRotator, S.Concrete);
+		}
+
+		// ground floor: barricaded door and window on the approach, open door on the lane side
+		B.WallMat = S.Brick;
+		B.WallRun(FVector2D(HouseW, HouseS), FVector2D(HouseE, HouseS), 0.0f, H, true, true, { Door(500.0f, 140.0f, EGapFill::Barricade), Window(1500.0f) }, TEXT("Breach House"), true);
+		B.WallRun(FVector2D(HouseW, HouseN), FVector2D(HouseE, HouseN), 0.0f, H, true, true, {}, TEXT("Breach House"), true);
+		B.WallRun(FVector2D(HouseW, HouseS), FVector2D(HouseW, HouseN), 0.0f, H, true, true, { Door(600.0f) }, TEXT("Breach House"), true);
+		B.WallRun(FVector2D(HouseE, HouseS), FVector2D(HouseE, HouseN), 0.0f, H, true, true, {}, TEXT("Breach House"), true);
+
+		// upper floor: destructible, with a hatch into the room below
+		B.Floor(HouseW, HouseE, HouseS, HouseN, UZ, 4, 3, TEXT("House Floor"), B.Tinted(S.Tile, FLinearColor::White, &B.PlasterCeiling));
+		B.Hatch(2700.0f, 1100.0f, UZ, TEXT("House Hatch"), true);
+
+		// open to the sky so the upper storey needs no lights of its own
+		B.WallMat = S.Plaster;
+		B.WallRun(FVector2D(HouseW, HouseS), FVector2D(HouseE, HouseS), UZ, H, true, false, { TallWindow(1000.0f) }, TEXT("House Upstairs"));
+		B.WallRun(FVector2D(HouseW, HouseN), FVector2D(HouseE, HouseN), UZ, H, true, false, {}, TEXT("House Upstairs"));
+		B.WallRun(FVector2D(HouseW, HouseS), FVector2D(HouseW, HouseN), UZ, H, true, false, {}, TEXT("House Upstairs"));
+		B.WallRun(FVector2D(HouseE, HouseS), FVector2D(HouseE, HouseN), UZ, H, true, false, { Door(200.0f) }, TEXT("House Upstairs"));
+
+		// outside stairs up the east side to the upstairs door at y=700
+		B.SlopeY(-100.0f, 0.0f, 600.0f, UZ, 3620.0f, 160.0f, S.Concrete);
+		B.Block(FVector(3620.0f, 800.0f, UZ - 10.0f), FVector(220.0f, 400.0f, 20.0f), FRotator::ZeroRotator, S.Concrete);
+
+		// rappel up the south face to the tall window
+		B.Rope(FVector(2500.0f, HouseS - 12.0f, 0.0f), -90.0f, UZ + H + 20.0f);
+		B.Sign(TEXT("ROPE [T]"), FVector(2500.0f, HouseS - 30.0f, 150.0f), FaceSouth, 30.0f);
+
+		// drone routes: a hole in the east wall and a duct through it
+		B.DroneTunnel(FVector2D(4100.0f, 1000.0f), FVector2D(HouseE + 15.0f, 1000.0f), TEXT("House Duct"));
+		B.DroneHole(HouseE, 1000.0f, 0.0f);
+		B.DroneHole(HouseE, 800.0f, 0.0f);
+		B.Sign(TEXT("DRONE DUCT"), FVector(3900.0f, 1000.0f, 90.0f), FaceSouth, 26.0f);
+
+		B.CeilingLight(FVector(2250.0f, 1100.0f, 270.0f), 1200.0f, 900.0f);
+		B.CeilingLight(FVector(2750.0f, 1100.0f, 270.0f), 1200.0f, 900.0f);
+
+		B.Site(TEXT("Range"), FVector(2500.0f, 1100.0f, 150.0f), FVector(950.0f, 550.0f, 150.0f));
+
+		Dummy(TEXT("House dummy"), FVector(2000.0f, 1350.0f, 100.0f), LookSouth);
+		Dummy(TEXT("House dummy"), FVector(3100.0f, 850.0f, 100.0f), LookSouth);
+		Dummy(TEXT("Upstairs dummy"), FVector(2500.0f, 1400.0f, UZ + 100.0f), LookSouth);
+
+		B.SecurityCamera(TEXT("Cam: House"), FVector(1530.0f, 1670.0f, 270.0f), -45.0f);
+		B.SecurityCamera(TEXT("Cam: Upstairs"), FVector(3470.0f, 1670.0f, UZ + 270.0f), -135.0f);
+		B.SecurityCamera(TEXT("Cam: Lanes"), FVector(1170.0f, 350.0f, 190.0f), 110.0f);
+
+		// ===== allies beside the spawn: friendly fire downs them, F brings them back =====
+		B.Sign(TEXT("ALLIES: SHOOT TO DOWN, [F] TO REVIVE"), FVector(-850.0f, -350.0f, 230.0f), FaceSouth, 26.0f, FColor::Cyan);
+		Dummy(TEXT("Ally"), FVector(-700.0f, -500.0f, 100.0f), LookSouth, 100.0f, 0);
+		Dummy(TEXT("Ally"), FVector(-1000.0f, -500.0f, 100.0f), LookSouth, 100.0f, 0);
+
+		// ===== movement course beside the spawn: vault heights and a corner to lean around =====
+		B.Sign(TEXT("VAULT [SPACE]  /  LEAN [Q/E]"), FVector(750.0f, -180.0f, 230.0f), FaceSouth, 26.0f, FColor::Cyan);
+		B.Block(FVector(450.0f, -400.0f, 30.0f), FVector(120.0f, 60.0f, 60.0f), FRotator::ZeroRotator, LaneWood);
+		B.Block(FVector(750.0f, -400.0f, 50.0f), FVector(120.0f, 60.0f, 100.0f), FRotator::ZeroRotator, LaneWood);
+		B.Block(FVector(1050.0f, -400.0f, 70.0f), FVector(120.0f, 60.0f, 140.0f), FRotator::ZeroRotator, LaneWood);
+		B.Block(FVector(750.0f, -800.0f, 120.0f), FVector(80.0f, 80.0f, 240.0f), FRotator::ZeroRotator, S.Concrete);
 	}
 
 	void Clear(FSiegeLayoutResult& Layout)
